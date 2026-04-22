@@ -5,18 +5,21 @@ import JSZip from 'jszip';
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
 const SAMPLE_INTERVAL = 1 / 15;          // 15fps 간격으로 샘플링
 const OUTPUT_WIDTH = 480;
+const DIFF_WIDTH = 80;   // diff 계산 전용 축소 해상도 (A: 36배 빠름)
+const DIFF_HEIGHT = 45;
 
-// 두 ImageData의 정규화된 픽셀 차이값 계산 (0.0 ~ 1.0)
+// 루미넌스 기반 정규화 픽셀 차이값 계산 (C: 조명/색상 노이즈에 강건)
 const computePixelDiff = (prev, curr) => {
     const d1 = prev.data;
     const d2 = curr.data;
     let total = 0;
+    const pixelCount = d1.length / 4;
     for (let i = 0; i < d1.length; i += 4) {
-        total += Math.abs(d1[i]     - d2[i]);
-        total += Math.abs(d1[i + 1] - d2[i + 1]);
-        total += Math.abs(d1[i + 2] - d2[i + 2]);
+        const lum1 = 0.299 * d1[i] + 0.587 * d1[i + 1] + 0.114 * d1[i + 2];
+        const lum2 = 0.299 * d2[i] + 0.587 * d2[i + 1] + 0.114 * d2[i + 2];
+        total += Math.abs(lum1 - lum2);
     }
-    return total / ((d1.length / 4) * 3 * 255);
+    return total / (pixelCount * 255);
 };
 
 const VideoReferenceCollector = ({ onBack }) => {
@@ -32,9 +35,10 @@ const VideoReferenceCollector = ({ onBack }) => {
     const [isDraggingOver, setIsDraggingOver] = useState(false);
 
     const fileInputRef = useRef(null);
-    const videoElRef = useRef(null); // 추출 전용 hidden video
-    const canvasRef = useRef(null);  // 픽셀 읽기용 hidden canvas
-    const abortRef = useRef(false);  // 추출 중단 플래그
+    const videoElRef = useRef(null);     // 추출 전용 hidden video
+    const canvasRef = useRef(null);      // 캡처용 full-size hidden canvas
+    const diffCanvasRef = useRef(null);  // diff 계산 전용 소형 canvas (A)
+    const abortRef = useRef(false);      // 추출 중단 플래그
 
     useEffect(() => {
         const key = localStorage.getItem('gemini_api_key');
@@ -88,7 +92,7 @@ const VideoReferenceCollector = ({ onBack }) => {
     };
 
     const startExtraction = async () => {
-        if (!videoFile || !videoElRef.current || !canvasRef.current) return;
+        if (!videoFile || !videoElRef.current || !canvasRef.current || !diffCanvasRef.current) return;
 
         const capturedThreshold = threshold; // 시작 시점의 값으로 고정
         abortRef.current = false;
@@ -99,7 +103,9 @@ const VideoReferenceCollector = ({ onBack }) => {
 
         const video = videoElRef.current;
         const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+        const ctx = canvas.getContext('2d');
+        const diffCanvas = diffCanvasRef.current;
+        const diffCtx = diffCanvas.getContext('2d', { willReadFrequently: true });
 
         video.src = videoUrl;
 
@@ -125,6 +131,8 @@ const VideoReferenceCollector = ({ onBack }) => {
         const outputHeight = Math.round(OUTPUT_WIDTH * aspectRatio) || 270;
         canvas.width = OUTPUT_WIDTH;
         canvas.height = outputHeight;
+        diffCanvas.width = DIFF_WIDTH;
+        diffCanvas.height = DIFF_HEIGHT;
 
         const seekTo = (t) => new Promise((resolve) => {
             const handle = () => { video.removeEventListener('seeked', handle); resolve(); };
@@ -133,6 +141,8 @@ const VideoReferenceCollector = ({ onBack }) => {
         });
 
         const captureFrame = (t) => {
+            // 캡처 시에만 풀사이즈 캔버스에 그림 (A: 평소엔 소형 캔버스만 사용)
+            ctx.drawImage(video, 0, 0, OUTPUT_WIDTH, outputHeight);
             const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
             cutCount++;
             const fileName = `cut_${String(cutCount).padStart(3, '0')}_${t.toFixed(2)}s.jpg`;
@@ -159,8 +169,8 @@ const VideoReferenceCollector = ({ onBack }) => {
         try {
             // 첫 프레임은 항상 캡처
             await seekTo(0);
-            ctx.drawImage(video, 0, 0, OUTPUT_WIDTH, outputHeight);
-            prevImageData = ctx.getImageData(0, 0, OUTPUT_WIDTH, outputHeight);
+            diffCtx.drawImage(video, 0, 0, DIFF_WIDTH, DIFF_HEIGHT);
+            prevImageData = diffCtx.getImageData(0, 0, DIFF_WIDTH, DIFF_HEIGHT);
             captureFrame(0);
             time = SAMPLE_INTERVAL;
 
@@ -171,8 +181,9 @@ const VideoReferenceCollector = ({ onBack }) => {
 
                 if (abortRef.current) break;
 
-                ctx.drawImage(video, 0, 0, OUTPUT_WIDTH, outputHeight);
-                const currentImageData = ctx.getImageData(0, 0, OUTPUT_WIDTH, outputHeight);
+                // diff는 소형 캔버스로만 계산 (A: 36배 빠름)
+                diffCtx.drawImage(video, 0, 0, DIFF_WIDTH, DIFF_HEIGHT);
+                const currentImageData = diffCtx.getImageData(0, 0, DIFF_WIDTH, DIFF_HEIGHT);
                 const diff = computePixelDiff(prevImageData, currentImageData);
 
                 if (!inTransition && diff > capturedThreshold) {
@@ -304,6 +315,7 @@ const VideoReferenceCollector = ({ onBack }) => {
             {/* 추출 전용 hidden 엘리먼트 */}
             <video ref={videoElRef} className="hidden" muted playsInline crossOrigin="anonymous" />
             <canvas ref={canvasRef} className="hidden" />
+            <canvas ref={diffCanvasRef} className="hidden" />
 
             <button
                 onClick={onBack}
