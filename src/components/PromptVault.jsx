@@ -1,21 +1,30 @@
-import { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, BookMarked, Search, Plus, Edit2, Trash2, Copy, Check, X } from 'lucide-react';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { ArrowLeft, BookMarked, Search, Plus, Edit2, Trash2, Copy, Check, X, ImagePlus } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
-const EMPTY_FORM = { title: '', content: '', category: '', tagsInput: '', memo: '' };
+const EMPTY_FORM = { title: '', content: '', tagsInput: '', memo: '', thumbnail_url: '' };
+
+const getThumbnailPath = (url) => {
+    if (!url) return null;
+    const marker = '/thumbnails/';
+    const idx = url.indexOf(marker);
+    return idx !== -1 ? url.slice(idx + marker.length) : null;
+};
 
 const PromptVault = ({ onBack }) => {
     const [prompts, setPrompts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
-    const [selectedCategory, setSelectedCategory] = useState('');
     const [selectedTags, setSelectedTags] = useState(new Set());
     const [modalOpen, setModalOpen] = useState(false);
     const [editingPrompt, setEditingPrompt] = useState(null);
     const [form, setForm] = useState(EMPTY_FORM);
+    const [thumbnailFile, setThumbnailFile] = useState(null);  // 새로 선택한 파일
+    const [thumbnailPreview, setThumbnailPreview] = useState('');
     const [saving, setSaving] = useState(false);
     const [copiedId, setCopiedId] = useState(null);
     const [deleteConfirmId, setDeleteConfirmId] = useState(null);
+    const fileInputRef = useRef(null);
 
     useEffect(() => { fetchPrompts(); }, []);
 
@@ -26,50 +35,116 @@ const PromptVault = ({ onBack }) => {
         setLoading(false);
     };
 
-    const allCategories = useMemo(() =>
-        [...new Set(prompts.map(p => p.category).filter(Boolean))].sort(), [prompts]);
-
     const allTags = useMemo(() =>
         [...new Set(prompts.flatMap(p => p.tags || []))].sort(), [prompts]);
 
     const filtered = useMemo(() => prompts.filter(p => {
         const q = search.toLowerCase();
         const matchSearch = !q || p.title.toLowerCase().includes(q) || p.content.toLowerCase().includes(q);
-        const matchCategory = !selectedCategory || p.category === selectedCategory;
         const matchTags = selectedTags.size === 0 || [...selectedTags].every(t => p.tags?.includes(t));
-        return matchSearch && matchCategory && matchTags;
-    }), [prompts, search, selectedCategory, selectedTags]);
+        return matchSearch && matchTags;
+    }), [prompts, search, selectedTags]);
 
-    const openAdd = () => { setEditingPrompt(null); setForm(EMPTY_FORM); setModalOpen(true); };
-    const openEdit = (p) => {
-        setEditingPrompt(p);
-        setForm({ title: p.title, content: p.content, category: p.category || '', tagsInput: (p.tags || []).join(', '), memo: p.memo || '' });
+    const openAdd = () => {
+        setEditingPrompt(null);
+        setForm(EMPTY_FORM);
+        setThumbnailFile(null);
+        setThumbnailPreview('');
         setModalOpen(true);
     };
-    const closeModal = () => { setModalOpen(false); setEditingPrompt(null); };
+
+    const openEdit = (p) => {
+        setEditingPrompt(p);
+        setForm({
+            title: p.title,
+            content: p.content,
+            tagsInput: (p.tags || []).join(', '),
+            memo: p.memo || '',
+            thumbnail_url: p.thumbnail_url || '',
+        });
+        setThumbnailFile(null);
+        setThumbnailPreview(p.thumbnail_url || '');
+        setModalOpen(true);
+    };
+
+    const closeModal = () => {
+        if (thumbnailFile) URL.revokeObjectURL(thumbnailPreview);
+        setModalOpen(false);
+        setEditingPrompt(null);
+        setThumbnailFile(null);
+        setThumbnailPreview('');
+    };
+
+    const handleThumbnailSelect = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (thumbnailFile) URL.revokeObjectURL(thumbnailPreview);
+        setThumbnailFile(file);
+        setThumbnailPreview(URL.createObjectURL(file));
+        e.target.value = '';
+    };
+
+    const removeThumbnailPreview = () => {
+        if (thumbnailFile) URL.revokeObjectURL(thumbnailPreview);
+        setThumbnailFile(null);
+        setThumbnailPreview('');
+        setForm(prev => ({ ...prev, thumbnail_url: '' }));
+    };
+
+    const uploadThumbnail = async (file) => {
+        const ext = file.name.split('.').pop();
+        const path = `${Date.now()}.${ext}`;
+        const { error } = await supabase.storage.from('thumbnails').upload(path, file);
+        if (error) throw error;
+        return supabase.storage.from('thumbnails').getPublicUrl(path).data.publicUrl;
+    };
 
     const savePrompt = async () => {
         if (!form.title.trim() || !form.content.trim()) return;
         setSaving(true);
-        const tags = form.tagsInput.split(',').map(t => t.trim()).filter(Boolean);
-        const payload = {
-            title: form.title.trim(),
-            content: form.content.trim(),
-            category: form.category.trim() || null,
-            tags: tags.length ? tags : null,
-            memo: form.memo.trim() || null,
-        };
-        if (editingPrompt) {
-            await supabase.from('prompts').update(payload).eq('id', editingPrompt.id);
-        } else {
-            await supabase.from('prompts').insert(payload);
+
+        try {
+            let thumbnail_url = form.thumbnail_url;
+
+            // 새 파일 업로드
+            if (thumbnailFile) {
+                // 기존 썸네일 삭제
+                const oldPath = getThumbnailPath(editingPrompt?.thumbnail_url);
+                if (oldPath) await supabase.storage.from('thumbnails').remove([oldPath]);
+                thumbnail_url = await uploadThumbnail(thumbnailFile);
+            } else if (!thumbnailPreview && editingPrompt?.thumbnail_url) {
+                // 썸네일 제거
+                const oldPath = getThumbnailPath(editingPrompt.thumbnail_url);
+                if (oldPath) await supabase.storage.from('thumbnails').remove([oldPath]);
+                thumbnail_url = null;
+            }
+
+            const tags = form.tagsInput.split(',').map(t => t.trim()).filter(Boolean);
+            const payload = {
+                title: form.title.trim(),
+                content: form.content.trim(),
+                tags: tags.length ? tags : null,
+                memo: form.memo.trim() || null,
+                thumbnail_url: thumbnail_url || null,
+            };
+
+            if (editingPrompt) {
+                await supabase.from('prompts').update(payload).eq('id', editingPrompt.id);
+            } else {
+                await supabase.from('prompts').insert(payload);
+            }
+
+            closeModal();
+            fetchPrompts();
+        } finally {
+            setSaving(false);
         }
-        setSaving(false);
-        closeModal();
-        fetchPrompts();
     };
 
     const deletePrompt = async (id) => {
+        const target = prompts.find(p => p.id === id);
+        const path = getThumbnailPath(target?.thumbnail_url);
+        if (path) await supabase.storage.from('thumbnails').remove([path]);
         await supabase.from('prompts').delete().eq('id', id);
         setDeleteConfirmId(null);
         fetchPrompts();
@@ -115,26 +190,16 @@ const PromptVault = ({ onBack }) => {
                 </button>
             </div>
 
-            {/* 검색 + 카테고리 필터 */}
-            <div className="flex flex-col sm:flex-row gap-3 mb-4">
-                <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
-                    <input
-                        type="text"
-                        placeholder="제목 또는 내용 검색..."
-                        value={search}
-                        onChange={e => setSearch(e.target.value)}
-                        className="w-full bg-neutral-900 border border-neutral-800 focus:border-brand rounded-xl pl-10 pr-4 py-3 text-white text-sm outline-none transition-colors"
-                    />
-                </div>
-                <select
-                    value={selectedCategory}
-                    onChange={e => setSelectedCategory(e.target.value)}
-                    className="bg-neutral-900 border border-neutral-800 focus:border-brand rounded-xl px-4 py-3 text-sm text-white outline-none transition-colors min-w-[160px]"
-                >
-                    <option value="">전체 카테고리</option>
-                    {allCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+            {/* 검색 */}
+            <div className="relative mb-4">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                <input
+                    type="text"
+                    placeholder="제목 또는 내용 검색..."
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                    className="w-full bg-neutral-900 border border-neutral-800 focus:border-brand rounded-xl pl-10 pr-4 py-3 text-white text-sm outline-none transition-colors"
+                />
             </div>
 
             {/* 태그 필터 */}
@@ -170,71 +235,79 @@ const PromptVault = ({ onBack }) => {
             ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {filtered.map(p => (
-                        <div key={p.id} className="group bg-cardBg border border-cardBorder hover:border-brand/30 rounded-2xl p-5 flex flex-col gap-3 transition-colors">
-                            {/* 카드 헤더 */}
-                            <div className="flex items-start justify-between gap-3">
-                                <div className="flex-1 min-w-0">
-                                    <h3 className="font-bold text-white text-base leading-snug truncate">{p.title}</h3>
-                                    {p.category && (
-                                        <span className="text-xs text-brand/70 font-medium mt-0.5 block">{p.category}</span>
-                                    )}
+                        <div key={p.id} className="group bg-cardBg border border-cardBorder hover:border-brand/30 rounded-2xl overflow-hidden flex flex-col transition-colors">
+                            {/* 썸네일 */}
+                            {p.thumbnail_url && (
+                                <div className="w-full aspect-video overflow-hidden bg-neutral-900">
+                                    <img
+                                        src={p.thumbnail_url}
+                                        alt={p.title}
+                                        className="w-full h-full object-cover transform transition-transform duration-500 group-hover:scale-105"
+                                    />
                                 </div>
-                                <div className="flex items-center gap-1 shrink-0">
-                                    <button
-                                        onClick={() => copyPrompt(p)}
-                                        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:text-brand hover:bg-brand/10 transition-all"
-                                        title="복사"
-                                    >
-                                        {copiedId === p.id
-                                            ? <Check className="w-4 h-4 text-brand" />
-                                            : <Copy className="w-4 h-4" />}
-                                    </button>
-                                    <button
-                                        onClick={() => openEdit(p)}
-                                        className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-neutral-700 transition-all"
-                                        title="수정"
-                                    >
-                                        <Edit2 className="w-4 h-4" />
-                                    </button>
-                                    {deleteConfirmId === p.id ? (
-                                        <div className="flex items-center gap-1">
-                                            <button
-                                                onClick={() => deletePrompt(p.id)}
-                                                className="px-2 py-1 text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30 transition-all"
-                                            >삭제</button>
-                                            <button
-                                                onClick={() => setDeleteConfirmId(null)}
-                                                className="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-white"
-                                            ><X className="w-3 h-3" /></button>
-                                        </div>
-                                    ) : (
+                            )}
+
+                            <div className="p-5 flex flex-col gap-3 flex-1">
+                                {/* 카드 헤더 */}
+                                <div className="flex items-start justify-between gap-3">
+                                    <h3 className="font-bold text-white text-base leading-snug">{p.title}</h3>
+                                    <div className="flex items-center gap-1 shrink-0">
                                         <button
-                                            onClick={() => setDeleteConfirmId(p.id)}
-                                            className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
-                                            title="삭제"
+                                            onClick={() => copyPrompt(p)}
+                                            className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:text-brand hover:bg-brand/10 transition-all"
+                                            title="복사"
                                         >
-                                            <Trash2 className="w-4 h-4" />
+                                            {copiedId === p.id
+                                                ? <Check className="w-4 h-4 text-brand" />
+                                                : <Copy className="w-4 h-4" />}
                                         </button>
-                                    )}
+                                        <button
+                                            onClick={() => openEdit(p)}
+                                            className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:text-white hover:bg-neutral-700 transition-all"
+                                            title="수정"
+                                        >
+                                            <Edit2 className="w-4 h-4" />
+                                        </button>
+                                        {deleteConfirmId === p.id ? (
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => deletePrompt(p.id)}
+                                                    className="px-2 py-1 text-xs font-bold bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30 transition-all"
+                                                >삭제</button>
+                                                <button
+                                                    onClick={() => setDeleteConfirmId(null)}
+                                                    className="w-6 h-6 flex items-center justify-center text-gray-500 hover:text-white"
+                                                ><X className="w-3 h-3" /></button>
+                                            </div>
+                                        ) : (
+                                            <button
+                                                onClick={() => setDeleteConfirmId(p.id)}
+                                                className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
+                                                title="삭제"
+                                            >
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
+
+                                {/* 내용 미리보기 */}
+                                <p className="text-sm text-gray-400 leading-relaxed line-clamp-3 whitespace-pre-wrap">{p.content}</p>
+
+                                {/* 태그 */}
+                                {p.tags?.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {p.tags.map(tag => (
+                                            <span key={tag} className="px-2 py-0.5 bg-neutral-800 border border-neutral-700 text-gray-400 text-xs rounded-full">#{tag}</span>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* 메모 */}
+                                {p.memo && (
+                                    <p className="text-xs text-gray-600 border-t border-neutral-800 pt-2">{p.memo}</p>
+                                )}
                             </div>
-
-                            {/* 내용 미리보기 */}
-                            <p className="text-sm text-gray-400 leading-relaxed line-clamp-3 whitespace-pre-wrap">{p.content}</p>
-
-                            {/* 태그 */}
-                            {p.tags?.length > 0 && (
-                                <div className="flex flex-wrap gap-1.5">
-                                    {p.tags.map(tag => (
-                                        <span key={tag} className="px-2 py-0.5 bg-neutral-800 border border-neutral-700 text-gray-400 text-xs rounded-full">#{tag}</span>
-                                    ))}
-                                </div>
-                            )}
-
-                            {/* 메모 */}
-                            {p.memo && (
-                                <p className="text-xs text-gray-600 border-t border-neutral-800 pt-2">{p.memo}</p>
-                            )}
                         </div>
                     ))}
                 </div>
@@ -254,6 +327,42 @@ const PromptVault = ({ onBack }) => {
 
                         {/* 모달 폼 */}
                         <div className="overflow-y-auto px-6 py-5 flex flex-col gap-4">
+
+                            {/* 썸네일 업로드 */}
+                            <div>
+                                <label className="text-xs text-gray-400 font-semibold mb-1.5 block">썸네일</label>
+                                <input
+                                    type="file"
+                                    ref={fileInputRef}
+                                    onChange={handleThumbnailSelect}
+                                    accept="image/*"
+                                    className="hidden"
+                                />
+                                {thumbnailPreview ? (
+                                    <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-neutral-800 group/thumb">
+                                        <img src={thumbnailPreview} alt="thumbnail" className="w-full h-full object-cover" />
+                                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                                            <button
+                                                onClick={() => fileInputRef.current?.click()}
+                                                className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-lg border border-white/20 transition-all"
+                                            >교체</button>
+                                            <button
+                                                onClick={removeThumbnailPreview}
+                                                className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs font-semibold rounded-lg border border-red-500/30 transition-all"
+                                            >제거</button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <button
+                                        onClick={() => fileInputRef.current?.click()}
+                                        className="w-full aspect-video rounded-xl border-2 border-dashed border-neutral-700 hover:border-brand/50 bg-neutral-900/50 hover:bg-neutral-800/50 flex flex-col items-center justify-center gap-2 text-gray-500 hover:text-gray-300 transition-all"
+                                    >
+                                        <ImagePlus className="w-7 h-7" />
+                                        <span className="text-xs font-medium">클릭하여 이미지 업로드</span>
+                                    </button>
+                                )}
+                            </div>
+
                             <div>
                                 <label className="text-xs text-gray-400 font-semibold mb-1.5 block">제목 *</label>
                                 <input
@@ -264,6 +373,7 @@ const PromptVault = ({ onBack }) => {
                                     className="w-full bg-black/50 border border-neutral-800 focus:border-brand rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-colors"
                                 />
                             </div>
+
                             <div>
                                 <label className="text-xs text-gray-400 font-semibold mb-1.5 block">프롬프트 내용 *</label>
                                 <textarea
@@ -274,28 +384,18 @@ const PromptVault = ({ onBack }) => {
                                     className="w-full bg-black/50 border border-neutral-800 focus:border-brand rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-colors resize-none leading-relaxed"
                                 />
                             </div>
-                            <div className="flex gap-3">
-                                <div className="flex-1">
-                                    <label className="text-xs text-gray-400 font-semibold mb-1.5 block">카테고리</label>
-                                    <input
-                                        type="text"
-                                        value={form.category}
-                                        onChange={e => updateForm('category', e.target.value)}
-                                        placeholder="예: 이미지 생성"
-                                        className="w-full bg-black/50 border border-neutral-800 focus:border-brand rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-colors"
-                                    />
-                                </div>
-                                <div className="flex-1">
-                                    <label className="text-xs text-gray-400 font-semibold mb-1.5 block">태그 (쉼표 구분)</label>
-                                    <input
-                                        type="text"
-                                        value={form.tagsInput}
-                                        onChange={e => updateForm('tagsInput', e.target.value)}
-                                        placeholder="예: 업스케일, 사진, SD"
-                                        className="w-full bg-black/50 border border-neutral-800 focus:border-brand rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-colors"
-                                    />
-                                </div>
+
+                            <div>
+                                <label className="text-xs text-gray-400 font-semibold mb-1.5 block">태그 (쉼표 구분)</label>
+                                <input
+                                    type="text"
+                                    value={form.tagsInput}
+                                    onChange={e => updateForm('tagsInput', e.target.value)}
+                                    placeholder="예: 업스케일, 사진, SD"
+                                    className="w-full bg-black/50 border border-neutral-800 focus:border-brand rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-colors"
+                                />
                             </div>
+
                             <div>
                                 <label className="text-xs text-gray-400 font-semibold mb-1.5 block">메모</label>
                                 <input
