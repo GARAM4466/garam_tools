@@ -17,7 +17,13 @@
       "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; cd \"z:\\\\프로그램개발\\\\디자인웹앱\"; git add .; git commit -m \"Remove unused tools, fix port, add CLAUDE.md and handoff\")",
       "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; cd \"z:\\\\프로그램개발\\\\디자인웹앱\"; git add src/components/VideoReferenceCollector.jsx; git commit -m \"Improve VideoReferenceCollector: small diff canvas \\(A\\) + luminance comparison \\(C\\)\")",
       "Bash(node_modules/.bin/vite build *)",
-      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; cd \"z:\\\\프로그램개발\\\\디자인웹앱\"; git add .; git commit -m \"Add video replace button\"; git push)"
+      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; cd \"z:\\\\프로그램개발\\\\디자인웹앱\"; git add .; git commit -m \"Add video replace button\"; git push)",
+      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; cd \"z:\\\\프로그램개발\\\\디자인웹앱\"; git add src/components/VideoReferenceCollector.jsx; git commit -m \"Remove AI analysis feature from VideoReferenceCollector\"; git push)",
+      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; cd \"z:\\\\프로그램개발\\\\디자인웹앱\"; git add README.md; git commit -m \"Update README with project handoff info\"; git push)",
+      "Bash(npm install *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "z:\\프로그램개발\\디자인웹앱\\.claude"
