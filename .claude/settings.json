@@ -14,7 +14,10 @@
       "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; git config --global user.name \"GARAM4466\"; git config --global user.email \"GARAM4466@users.noreply.github.com\"; cd \"z:\\\\프로그램개발\\\\디자인웹앱\"; git commit -m \"Initial commit\"; gh repo create garam_tools --public --source=. --remote=origin --push)",
       "PowerShell(netlify --version 2>$null)",
       "PowerShell(if \\(-not $?\\) { \"not installed\" })",
-      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; cd \"z:\\\\프로그램개발\\\\디자인웹앱\"; git add .; git commit -m \"Remove unused tools, fix port, add CLAUDE.md and handoff\")"
+      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; cd \"z:\\\\프로그램개발\\\\디자인웹앱\"; git add .; git commit -m \"Remove unused tools, fix port, add CLAUDE.md and handoff\")",
+      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; cd \"z:\\\\프로그램개발\\\\디자인웹앱\"; git add src/components/VideoReferenceCollector.jsx; git commit -m \"Improve VideoReferenceCollector: small diff canvas \\(A\\) + luminance comparison \\(C\\)\")",
+      "Bash(node_modules/.bin/vite build *)",
+      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; cd \"z:\\\\프로그램개발\\\\디자인웹앱\"; git add .; git commit -m \"Add video replace button\"; git push)"
     ],
     "additionalDirectories": [
       "z:\\프로그램개발\\디자인웹앱\\.claude"

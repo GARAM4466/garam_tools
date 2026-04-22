@@ -344,6 +344,13 @@ const VideoReferenceCollector = ({ onBack }) => {
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                 >
+                    <input
+                        type="file"
+                        ref={fileInputRef}
+                        onChange={handleFileChange}
+                        accept="video/mp4,video/webm"
+                        className="hidden"
+                    />
                     {!videoFile ? (
                         <div
                             className="border-2 border-dashed border-neutral-700 bg-neutral-900/60 hover:bg-neutral-800 hover:border-brand/70 rounded-2xl min-h-[300px] flex flex-col items-center justify-center text-center p-8 transition-all duration-300 cursor-pointer group"
@@ -354,13 +361,6 @@ const VideoReferenceCollector = ({ onBack }) => {
                             </div>
                             <h3 className="text-2xl font-bold text-white mb-2">영상을 드롭하거나 클릭하여 업로드</h3>
                             <p className="text-gray-400 text-sm">MP4, WebM 포맷 지원 · 최대 100MB · 모든 처리는 브라우저에서 실행</p>
-                            <input
-                                type="file"
-                                ref={fileInputRef}
-                                onChange={handleFileChange}
-                                accept="video/mp4,video/webm"
-                                className="hidden"
-                            />
                         </div>
                     ) : (
                         <div className="flex flex-col md:flex-row gap-8 items-center">
@@ -369,7 +369,16 @@ const VideoReferenceCollector = ({ onBack }) => {
                             </div>
 
                             <div className="w-full md:w-1/2 flex flex-col items-center md:items-start">
-                                <h3 className="text-xl font-bold text-white mb-1 truncate max-w-full">{videoFile.name}</h3>
+                                <div className="flex items-center gap-3 mb-1 max-w-full w-full">
+                                    <h3 className="text-xl font-bold text-white truncate flex-1">{videoFile.name}</h3>
+                                    <button
+                                        onClick={() => fileInputRef.current?.click()}
+                                        disabled={isWorking}
+                                        className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-brand/50 text-gray-400 hover:text-white text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        <Upload className="w-3 h-3" /> 교체
+                                    </button>
+                                </div>
                                 <p className="text-sm text-gray-500 mb-6">
                                     {(videoFile.size / 1024 / 1024).toFixed(1)}MB · 컷 추출 준비 완료
                                 </p>
