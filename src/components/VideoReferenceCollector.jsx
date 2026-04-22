@@ -1,5 +1,5 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { ArrowLeft, Upload, Settings, Film, Loader2, Download, AlertCircle, Sparkles, Zap, Sliders } from 'lucide-react';
+import { useState, useRef, useCallback } from 'react';
+import { ArrowLeft, Upload, Film, Loader2, Download, AlertCircle, Zap, Sliders } from 'lucide-react';
 import JSZip from 'jszip';
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
@@ -23,12 +23,11 @@ const computePixelDiff = (prev, curr) => {
 };
 
 const VideoReferenceCollector = ({ onBack }) => {
-    const [apiKey, setApiKey] = useState('');
     const [videoFile, setVideoFile] = useState(null);
     const [videoUrl, setVideoUrl] = useState(null);
     const [threshold, setThreshold] = useState(0.15);
 
-    const [status, setStatus] = useState('idle'); // idle, extracting, analyzing-ai, complete, error
+    const [status, setStatus] = useState('idle'); // idle, extracting, complete, error
     const [statusMessage, setStatusMessage] = useState('');
     const [progress, setProgress] = useState(0);
     const [frames, setFrames] = useState([]);
@@ -39,16 +38,6 @@ const VideoReferenceCollector = ({ onBack }) => {
     const canvasRef = useRef(null);      // 캡처용 full-size hidden canvas
     const diffCanvasRef = useRef(null);  // diff 계산 전용 소형 canvas (A)
     const abortRef = useRef(false);      // 추출 중단 플래그
-
-    useEffect(() => {
-        const key = localStorage.getItem('gemini_api_key');
-        if (key) setApiKey(key);
-    }, []);
-
-    const handleApiKeyChange = (e) => {
-        setApiKey(e.target.value);
-        localStorage.setItem('gemini_api_key', e.target.value);
-    };
 
     const handleFileChange = (e) => {
         const file = e.target.files?.[0];
@@ -94,7 +83,7 @@ const VideoReferenceCollector = ({ onBack }) => {
     const startExtraction = async () => {
         if (!videoFile || !videoElRef.current || !canvasRef.current || !diffCanvasRef.current) return;
 
-        const capturedThreshold = threshold; // 시작 시점의 값으로 고정
+        const capturedThreshold = threshold;
         abortRef.current = false;
         setStatus('extracting');
         setStatusMessage('프레임을 스캔하며 컷 변화를 감지하고 있습니다...');
@@ -140,34 +129,25 @@ const VideoReferenceCollector = ({ onBack }) => {
             video.currentTime = t;
         });
 
+        let cutCount = 0;
+
         const captureFrame = (t) => {
-            // 캡처 시에만 풀사이즈 캔버스에 그림 (A: 평소엔 소형 캔버스만 사용)
             ctx.drawImage(video, 0, 0, OUTPUT_WIDTH, outputHeight);
             const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
             cutCount++;
             const fileName = `cut_${String(cutCount).padStart(3, '0')}_${t.toFixed(2)}s.jpg`;
-            setFrames(prev => [...prev, {
-                id: `${cutCount}_${t.toFixed(3)}`,
-                fileName,
-                dataUrl,
-                description: '',
-                analyzed: false,
-            }]);
+            setFrames(prev => [...prev, { id: `${cutCount}_${t.toFixed(3)}`, fileName, dataUrl }]);
         };
 
-        // 장면 안정 판단 임계값 — 고정값으로 트랜지션 후 정지 프레임 감지
         const settleThreshold = Math.min(capturedThreshold * 0.4, 0.08);
-        // 트랜지션 최대 지속 프레임 수 (~0.6초) — 초과 시 현재 프레임 강제 캡처
         const MAX_TRANSITION_FRAMES = Math.round(0.6 / SAMPLE_INTERVAL);
 
         let prevImageData = null;
-        let cutCount = 0;
         let inTransition = false;
         let transitionFrames = 0;
         let time = 0;
 
         try {
-            // 첫 프레임은 항상 캡처
             await seekTo(0);
             diffCtx.drawImage(video, 0, 0, DIFF_WIDTH, DIFF_HEIGHT);
             prevImageData = diffCtx.getImageData(0, 0, DIFF_WIDTH, DIFF_HEIGHT);
@@ -181,19 +161,16 @@ const VideoReferenceCollector = ({ onBack }) => {
 
                 if (abortRef.current) break;
 
-                // diff는 소형 캔버스로만 계산 (A: 36배 빠름)
                 diffCtx.drawImage(video, 0, 0, DIFF_WIDTH, DIFF_HEIGHT);
                 const currentImageData = diffCtx.getImageData(0, 0, DIFF_WIDTH, DIFF_HEIGHT);
                 const diff = computePixelDiff(prevImageData, currentImageData);
 
                 if (!inTransition && diff > capturedThreshold) {
-                    // 전환 구간 진입 — 아직 캡처하지 않음
                     inTransition = true;
                     transitionFrames = 0;
                 } else if (inTransition) {
                     transitionFrames++;
                     if (diff < settleThreshold || transitionFrames >= MAX_TRANSITION_FRAMES) {
-                        // 장면 안정 또는 타임아웃 → 강제 캡처
                         captureFrame(time);
                         inTransition = false;
                         transitionFrames = 0;
@@ -222,74 +199,18 @@ const VideoReferenceCollector = ({ onBack }) => {
         }
     };
 
-    const analyzeGemini = async (dataUrl) => {
-        const prompt = "Describe this scene briefly in one sentence (in Korean) focusing on visual elements like camera angle, lighting, or main subjects. Keep it short. Example: 노을 지는 바닷가를 배경으로 한 인물 클로즈업.";
-        const base64Image = dataUrl.split(',')[1];
-        const payload = {
-            contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: "image/jpeg", data: base64Image } }] }]
-        };
-
-        try {
-            const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error?.message || "Gemini API 오류");
-            return data.candidates?.[0]?.content?.parts?.[0]?.text || "설명 생성 실패";
-        } catch {
-            return "설명을 불러오지 못했습니다.";
-        }
-    };
-
-    const analyzeAllFrames = async () => {
-        if (!apiKey) {
-            alert("하단의 API 설정 구역에 Gemini API 키를 먼저 입력해주세요!");
-            return;
-        }
-        if (frames.length === 0) return;
-
-        setStatus('analyzing-ai');
-        setStatusMessage(`총 ${frames.length}개의 컷을 AI가 분석하고 있습니다...`);
-
-        let currentFrames = [...frames];
-
-        for (let i = 0; i < currentFrames.length; i++) {
-            if (currentFrames[i].analyzed) continue;
-
-            setStatusMessage(`총 ${currentFrames.length}개 중 ${i + 1}번째 컷 분석 중...`);
-            const frame = currentFrames[i];
-
-            // dataUrl은 canvas.toDataURL() 결과로 이미 base64 데이터 URI
-            const description = await analyzeGemini(frame.dataUrl);
-
-            currentFrames[i] = { ...frame, description, analyzed: true };
-            setFrames([...currentFrames]);
-            await new Promise(r => setTimeout(r, 1000)); // API 속도 제한 방지
-        }
-
-        setStatus('complete');
-        setStatusMessage('모든 AI 장면 분석이 완료되었습니다!');
-    };
-
     const downloadAllZip = async () => {
         if (frames.length === 0) return;
 
         const zip = new JSZip();
         const folder = zip.folder("video_references");
-        let textReport = "장면 분석 리포트\n===================\n\n";
 
         for (const frame of frames) {
             const res = await fetch(frame.dataUrl);
             const blob = await res.blob();
             folder.file(frame.fileName, blob);
-            if (frame.description) {
-                textReport += `[${frame.fileName}]\n${frame.description}\n\n`;
-            }
         }
 
-        folder.file("descriptions.txt", textReport);
         const content = await zip.generateAsync({ type: "blob" });
         const link = document.createElement('a');
         link.href = URL.createObjectURL(content);
@@ -308,11 +229,10 @@ const VideoReferenceCollector = ({ onBack }) => {
         document.body.removeChild(link);
     };
 
-    const isWorking = ['extracting', 'analyzing-ai'].includes(status);
+    const isWorking = status === 'extracting';
 
     return (
         <div className="max-w-6xl mx-auto px-6 py-12 flex flex-col min-h-screen w-full font-sans">
-            {/* 추출 전용 hidden 엘리먼트 */}
             <video ref={videoElRef} className="hidden" muted playsInline crossOrigin="anonymous" />
             <canvas ref={canvasRef} className="hidden" />
             <canvas ref={diffCanvasRef} className="hidden" />
@@ -441,7 +361,7 @@ const VideoReferenceCollector = ({ onBack }) => {
                 <div className="w-full mb-10 bg-brand/5 border border-brand/20 rounded-2xl p-6 flex flex-col items-center text-center shadow-[0_0_50px_rgba(0,255,65,0.05)]">
                     <Loader2 className="w-12 h-12 text-brand animate-spin mb-4" />
                     <h3 className="text-xl font-bold text-brand mb-2">{statusMessage}</h3>
-                    {status === 'extracting' && progress > 0 && (
+                    {progress > 0 && (
                         <div className="w-full max-w-md bg-neutral-800 rounded-full h-3 mt-4 overflow-hidden border border-neutral-700">
                             <div
                                 className="bg-brand h-full rounded-full transition-all duration-300 relative overflow-hidden"
@@ -480,7 +400,7 @@ const VideoReferenceCollector = ({ onBack }) => {
 
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 auto-rows-max">
                         {frames.map((frame, i) => (
-                            <div key={frame.id} className="group bg-neutral-900 border border-neutral-800 hover:border-brand/40 transition-colors rounded-xl overflow-hidden flex flex-col shadow-lg fade-in-up">
+                            <div key={frame.id} className="group bg-neutral-900 border border-neutral-800 hover:border-brand/40 transition-colors rounded-xl overflow-hidden shadow-lg fade-in-up">
                                 <div className="relative bg-black w-full aspect-video flex items-center justify-center overflow-hidden">
                                     <img src={frame.dataUrl} alt={`Cut ${i + 1}`} className="w-full h-full object-cover transform transition-transform duration-500 group-hover:scale-105" />
                                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
@@ -495,52 +415,11 @@ const VideoReferenceCollector = ({ onBack }) => {
                                         CUT #{i + 1}
                                     </div>
                                 </div>
-                                {frame.analyzed && frame.description && (
-                                    <div className="p-3 bg-neutral-900/80 border-t border-neutral-800">
-                                        <p className="text-xs text-gray-300 leading-relaxed line-clamp-2">
-                                            {frame.description}
-                                        </p>
-                                    </div>
-                                )}
                             </div>
                         ))}
                     </div>
-
-                    {status !== 'extracting' && (
-                        <div className="mt-12 flex justify-center border-t border-neutral-800 pt-10">
-                            <button
-                                onClick={analyzeAllFrames}
-                                disabled={status === 'analyzing-ai'}
-                                className="group relative inline-flex items-center justify-center gap-3 px-8 py-4 bg-neutral-900 border border-neutral-700 hover:border-brand rounded-2xl overflow-hidden transition-all shadow-xl hover:shadow-[0_0_20px_rgba(0,255,65,0.1)]"
-                            >
-                                <div className="absolute inset-0 w-0 bg-brand transition-all duration-[250ms] ease-out group-hover:w-full opacity-10"></div>
-                                <Sparkles className="w-6 h-6 text-brand" />
-                                <span className="font-bold text-lg text-white">AI로 장면 분석하기</span>
-                            </button>
-                        </div>
-                    )}
                 </div>
             )}
-
-            {/* 하단 설정 박스 */}
-            <div className="w-full mt-auto mb-6 opacity-60 hover:opacity-100 transition-opacity duration-300">
-                <div className="bg-neutral-900/50 border border-neutral-800 rounded-2xl p-6 max-w-xl mx-auto">
-                    <h2 className="text-base font-bold mb-3 flex items-center gap-2 text-gray-300">
-                        <Settings className="w-4 h-4 text-brand" />
-                        선택 사항: AI 연동 설정
-                    </h2>
-                    <div className="flex flex-col gap-2">
-                        <label className="text-xs text-gray-500 font-semibold">Gemini API 키 (로컬 저장용, 입력 시 장면 묘사 기능 활성화)</label>
-                        <input
-                            type="password"
-                            value={apiKey}
-                            onChange={handleApiKeyChange}
-                            placeholder="AIza..."
-                            className="w-full bg-black/50 border border-neutral-800 focus:border-brand rounded-lg px-4 py-2 text-white text-sm outline-none transition-colors"
-                        />
-                    </div>
-                </div>
-            </div>
 
             <style dangerouslySetInnerHTML={{
                 __html: `
