@@ -1,0 +1,59 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #00ff41;
+  --color-dark-bg: #0b0b0b;
+  --color-card-bg: #151515;
+  --color-card-border: #2a2a2a;
+  --font-sans: 'Inter', sans-serif;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-dark-bg);
+    color: #ffffff;
+    font-family: var(--font-sans);
+    margin: 0;
+    padding: 0;
+  }
+}
+
+@layer components {
+  .glass-nav {
+    background: rgba(11, 11, 11, 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  }
+
+  .card-hover {
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  }
+
+  .card-hover:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 30px -10px rgba(0, 255, 65, 0.15);
+    border-color: rgba(0, 255, 65, 0.4);
+  }
+
+  .neon-text {
+    color: var(--color-brand);
+    text-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+  }
+
+  .btn-neon {
+    background-color: var(--color-brand);
+    color: #000;
+    transition: all 0.2s ease;
+  }
+
+  .btn-neon:hover {
+    background-color: #00cc33;
+    box-shadow: 0 0 15px rgba(0, 255, 65, 0.4);
+  }
+
+  .point-badge {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+  }
+}

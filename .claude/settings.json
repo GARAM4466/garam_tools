@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(netstat -ano)",
+      "Read(//c/Users/EDIT09/Downloads/**)",
+      "Bash(git --version)",
+      "Bash(git config *)",
+      "Bash(gh --version)",
+      "Bash(gh auth *)",
+      "Read(//c/Program Files/GitHub CLI/**)",
+      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; gh auth status)",
+      "PowerShell($env:PATH += \";C:\\\\Program Files\\\\GitHub CLI\"; cd \"z:\\\\프로그램개발\\\\디자인웹앱\"; git add .; git status)"
+    ],
+    "additionalDirectories": [
+      "z:\\프로그램개발\\디자인웹앱\\.claude"
+    ]
+  }
+}
