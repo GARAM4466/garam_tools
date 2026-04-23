@@ -17,7 +17,17 @@ export const handler = async (event) => {
             return { statusCode: 400, headers: cors, body: JSON.stringify({ error: 'URL이 필요합니다.' }) };
         }
 
-        const info = await ytdl.getInfo(url);
+        const options = {};
+        if (process.env.YOUTUBE_COOKIE) {
+            options.requestOptions = {
+                headers: {
+                    Cookie: process.env.YOUTUBE_COOKIE,
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+                },
+            };
+        }
+
+        const info = await ytdl.getInfo(url, options);
 
         // 오디오+비디오 합쳐진 포맷만 필터 (MP4 우선, 높은 화질 우선)
         const formats = info.formats
