@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { ArrowLeft, Upload, Film, Loader2, Download, AlertCircle, Zap, Sliders } from 'lucide-react';
 import JSZip from 'jszip';
 
-const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
 const SAMPLE_INTERVAL = 1 / 15;          // 15fps 간격으로 샘플링
 const OUTPUT_WIDTH = 480;
 const DIFF_WIDTH = 80;   // diff 계산 전용 축소 해상도 (A: 36배 빠름)
@@ -67,7 +67,7 @@ const VideoReferenceCollector = ({ onBack }) => {
 
     const processSelectedFile = (file) => {
         if (file.size > MAX_FILE_SIZE) {
-            alert('파일 크기가 100MB를 초과합니다. 더 작은 파일을 선택해주세요.');
+            alert('파일 크기가 200MB를 초과합니다. 더 작은 파일을 선택해주세요.');
             return;
         }
         abortRef.current = true; // 진행 중인 추출 중단
@@ -280,7 +280,7 @@ const VideoReferenceCollector = ({ onBack }) => {
                                 <Upload className="w-8 h-8" />
                             </div>
                             <h3 className="text-2xl font-bold text-white mb-2">영상을 드롭하거나 클릭하여 업로드</h3>
-                            <p className="text-gray-400 text-sm">MP4, WebM 포맷 지원 · 최대 100MB · 모든 처리는 브라우저에서 실행</p>
+                            <p className="text-gray-400 text-sm">MP4, WebM 포맷 지원 · 최대 200MB · 모든 처리는 브라우저에서 실행</p>
                         </div>
                     ) : (
                         <div className="flex flex-col md:flex-row gap-8 items-center">
