@@ -23,7 +23,17 @@
       "Bash(npm install *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(git -C \"z:/프로그램개발/디자인웹앱\" push)",
+      "Bash(git -C \"z:/프로그램개발/디자인웹앱\" add src/components/VideoReferenceCollector.jsx)",
+      "Bash(git -C \"z:/프로그램개발/디자인웹앱\" commit -m \"Add YouTube link input via cobalt.tools API\")",
+      "Bash(git -C \"z:/프로그램개발/디자인웹앱\" commit -m \"Fix cobalt API request: remove extra params, improve error reporting\")",
+      "Bash(git -C \"z:/프로그램개발/디자인웹앱\" add netlify/ netlify.toml src/components/VideoReferenceCollector.jsx package.json package-lock.json)",
+      "Bash(git -C \"z:/프로그램개발/디자인웹앱\" commit -m \"Add Netlify Function for YouTube video extraction via ytdl-core\")",
+      "Bash(git -C \"z:/프로그램개발/디자인웹앱\" add netlify/functions/youtube-info.js)",
+      "Bash(git -C \"z:/프로그램개발/디자인웹앱\" commit -m \"Use YOUTUBE_COOKIE env var for authenticated YouTube requests\")",
+      "Bash(git -C \"z:/프로그램개발/디자인웹앱\" add -A)",
+      "Bash(git -C \"z:/프로그램개발/디자인웹앱\" commit -m \"Remove YouTube feature, revert to file upload only\")"
     ],
     "additionalDirectories": [
       "z:\\프로그램개발\\디자인웹앱\\.claude"

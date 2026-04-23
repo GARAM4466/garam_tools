@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import { ArrowLeft, Upload, Film, Loader2, Download, AlertCircle, Zap, Sliders, Link2 } from 'lucide-react';
+import { ArrowLeft, Upload, Film, Loader2, Download, AlertCircle, Zap, Sliders } from 'lucide-react';
 import JSZip from 'jszip';
 
 const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
@@ -33,28 +33,11 @@ const VideoReferenceCollector = ({ onBack }) => {
     const [frames, setFrames] = useState([]);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
 
-    const [inputMode, setInputMode] = useState('file'); // 'file' | 'youtube'
-    const [youtubeUrl, setYoutubeUrl] = useState('');
-    const [ytStatus, setYtStatus] = useState('idle'); // 'idle' | 'fetching' | 'error'
-    const [ytProgress, setYtProgress] = useState(0);
-    const [ytError, setYtError] = useState('');
-
     const fileInputRef = useRef(null);
-    const videoElRef = useRef(null);
-    const canvasRef = useRef(null);
-    const diffCanvasRef = useRef(null);
-    const abortRef = useRef(false);
-
-    const loadVideoBlob = (file) => {
-        abortRef.current = true;
-        setVideoFile(file);
-        if (videoUrl) URL.revokeObjectURL(videoUrl);
-        setVideoUrl(URL.createObjectURL(file));
-        setFrames([]);
-        setStatus('idle');
-        setStatusMessage('');
-        setProgress(0);
-    };
+    const videoElRef = useRef(null);     // 추출 전용 hidden video
+    const canvasRef = useRef(null);      // 캡처용 full-size hidden canvas
+    const diffCanvasRef = useRef(null);  // diff 계산 전용 소형 canvas (A)
+    const abortRef = useRef(false);      // 추출 중단 플래그
 
     const handleFileChange = (e) => {
         const file = e.target.files?.[0];
@@ -87,72 +70,14 @@ const VideoReferenceCollector = ({ onBack }) => {
             alert('파일 크기가 200MB를 초과합니다. 더 작은 파일을 선택해주세요.');
             return;
         }
-        loadVideoBlob(file);
-    };
-
-    const handleYoutubeLoad = async () => {
-        if (!youtubeUrl.trim() || ytStatus === 'fetching') return;
-
-        setYtStatus('fetching');
-        setYtProgress(0);
-        setYtError('');
-
-        try {
-            // Step 1: Netlify Function으로 YouTube 영상 URL 추출
-            const infoRes = await fetch('/.netlify/functions/youtube-info', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: youtubeUrl.trim() }),
-            });
-
-            const info = await infoRes.json();
-            if (!infoRes.ok) throw new Error(info.error || '영상 정보를 가져올 수 없습니다.');
-
-            // Step 2: YouTube CDN에서 직접 영상 다운로드
-            const videoRes = await fetch(info.url);
-            if (!videoRes.ok) throw new Error('영상 다운로드에 실패했습니다.');
-
-            const total = parseInt(info.contentLength || videoRes.headers.get('Content-Length') || '0');
-            const reader = videoRes.body.getReader();
-            const chunks = [];
-            let received = 0;
-
-            for (;;) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                chunks.push(value);
-                received += value.length;
-                if (total > 0) setYtProgress(Math.round((received / total) * 100));
-            }
-
-            const mimeType = info.mimeType?.split(';')[0] || 'video/mp4';
-            const blob = new Blob(chunks, { type: mimeType });
-            const file = new File([blob], 'youtube-video.mp4', { type: mimeType });
-            loadVideoBlob(file);
-            setYtStatus('idle');
-            setYoutubeUrl('');
-        } catch (err) {
-            console.error(err);
-            setYtError(err.message || '알 수 없는 오류가 발생했습니다.');
-            setYtStatus('error');
-        }
-    };
-
-    const handleReplace = () => {
-        if (inputMode === 'youtube') {
-            abortRef.current = true;
-            if (videoUrl) URL.revokeObjectURL(videoUrl);
-            setVideoFile(null);
-            setVideoUrl(null);
-            setFrames([]);
-            setStatus('idle');
-            setStatusMessage('');
-            setProgress(0);
-            setYtStatus('idle');
-            setYtError('');
-        } else {
-            fileInputRef.current?.click();
-        }
+        abortRef.current = true; // 진행 중인 추출 중단
+        setVideoFile(file);
+        if (videoUrl) URL.revokeObjectURL(videoUrl);
+        setVideoUrl(URL.createObjectURL(file));
+        setFrames([]);
+        setStatus('idle');
+        setStatusMessage('');
+        setProgress(0);
     };
 
     const startExtraction = async () => {
@@ -305,7 +230,6 @@ const VideoReferenceCollector = ({ onBack }) => {
     };
 
     const isWorking = status === 'extracting';
-    const isYtFetching = ytStatus === 'fetching';
 
     return (
         <div className="max-w-6xl mx-auto px-6 py-12 flex flex-col min-h-screen w-full font-sans">
@@ -335,10 +259,10 @@ const VideoReferenceCollector = ({ onBack }) => {
             {/* 업로드 / 영상 미리보기 */}
             <div className="w-full mx-auto mb-10 transition-all duration-300">
                 <div
-                    className={`bg-cardBg border rounded-3xl p-8 shadow-2xl transition-colors duration-200 ${isDraggingOver && inputMode === 'file' ? 'border-brand/70 shadow-[0_0_30px_rgba(0,255,65,0.1)]' : 'border-cardBorder'}`}
-                    onDragOver={inputMode === 'file' ? handleDragOver : undefined}
-                    onDragLeave={inputMode === 'file' ? handleDragLeave : undefined}
-                    onDrop={inputMode === 'file' ? handleDrop : undefined}
+                    className={`bg-cardBg border rounded-3xl p-8 shadow-2xl transition-colors duration-200 ${isDraggingOver ? 'border-brand/70 shadow-[0_0_30px_rgba(0,255,65,0.1)]' : 'border-cardBorder'}`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
                 >
                     <input
                         type="file"
@@ -347,89 +271,17 @@ const VideoReferenceCollector = ({ onBack }) => {
                         accept="video/mp4,video/webm"
                         className="hidden"
                     />
-
                     {!videoFile ? (
-                        <>
-                            {/* 탭 토글 */}
-                            <div className="flex mb-6 bg-neutral-900 rounded-xl p-1 border border-neutral-800">
-                                <button
-                                    onClick={() => setInputMode('file')}
-                                    className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all ${inputMode === 'file' ? 'bg-neutral-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                                >
-                                    <Upload className="w-4 h-4" /> 파일 업로드
-                                </button>
-                                <button
-                                    onClick={() => { setInputMode('youtube'); setYtStatus('idle'); setYtError(''); }}
-                                    className={`flex-1 py-2.5 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all ${inputMode === 'youtube' ? 'bg-neutral-700 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                                >
-                                    <Link2 className="w-4 h-4" /> YouTube 링크
-                                </button>
+                        <div
+                            className="border-2 border-dashed border-neutral-700 bg-neutral-900/60 hover:bg-neutral-800 hover:border-brand/70 rounded-2xl min-h-[300px] flex flex-col items-center justify-center text-center p-8 transition-all duration-300 cursor-pointer group"
+                            onClick={() => fileInputRef.current?.click()}
+                        >
+                            <div className="w-20 h-20 bg-neutral-800 rounded-full flex items-center justify-center mb-6 text-brand shadow-xl shadow-brand/5 group-hover:scale-110 transition-transform">
+                                <Upload className="w-8 h-8" />
                             </div>
-
-                            {inputMode === 'file' ? (
-                                <div
-                                    className="border-2 border-dashed border-neutral-700 bg-neutral-900/60 hover:bg-neutral-800 hover:border-brand/70 rounded-2xl min-h-[300px] flex flex-col items-center justify-center text-center p-8 transition-all duration-300 cursor-pointer group"
-                                    onClick={() => fileInputRef.current?.click()}
-                                >
-                                    <div className="w-20 h-20 bg-neutral-800 rounded-full flex items-center justify-center mb-6 text-brand shadow-xl shadow-brand/5 group-hover:scale-110 transition-transform">
-                                        <Upload className="w-8 h-8" />
-                                    </div>
-                                    <h3 className="text-2xl font-bold text-white mb-2">영상을 드롭하거나 클릭하여 업로드</h3>
-                                    <p className="text-gray-400 text-sm">MP4, WebM 포맷 지원 · 최대 200MB · 모든 처리는 브라우저에서 실행</p>
-                                </div>
-                            ) : isYtFetching ? (
-                                <div className="min-h-[300px] flex flex-col items-center justify-center gap-5">
-                                    <Loader2 className="w-12 h-12 text-brand animate-spin" />
-                                    <p className="text-white font-bold text-lg">YouTube에서 영상을 다운로드하는 중...</p>
-                                    <div className="w-full max-w-md">
-                                        <div className="bg-neutral-800 rounded-full h-2.5 overflow-hidden border border-neutral-700">
-                                            <div
-                                                className="bg-brand h-full rounded-full transition-all duration-300"
-                                                style={{ width: ytProgress > 0 ? `${ytProgress}%` : '5%' }}
-                                            />
-                                        </div>
-                                        {ytProgress > 0 && (
-                                            <p className="text-brand font-bold tabular-nums text-center mt-2">{ytProgress}%</p>
-                                        )}
-                                    </div>
-                                    <p className="text-gray-600 text-sm">영상 크기에 따라 시간이 걸릴 수 있습니다</p>
-                                </div>
-                            ) : (
-                                <div className="min-h-[300px] flex flex-col items-center justify-center gap-6 px-4">
-                                    <div className="w-20 h-20 bg-neutral-800 rounded-full flex items-center justify-center text-red-500">
-                                        <Link2 className="w-8 h-8" />
-                                    </div>
-                                    <div className="w-full max-w-lg flex flex-col gap-3">
-                                        <div className="flex gap-3">
-                                            <input
-                                                type="url"
-                                                placeholder="https://www.youtube.com/watch?v=..."
-                                                value={youtubeUrl}
-                                                onChange={(e) => setYoutubeUrl(e.target.value)}
-                                                onKeyDown={(e) => e.key === 'Enter' && handleYoutubeLoad()}
-                                                className="flex-1 bg-neutral-800 border border-neutral-700 focus:border-brand/50 rounded-xl px-4 py-3 text-white placeholder-gray-600 outline-none transition-colors text-sm"
-                                            />
-                                            <button
-                                                onClick={handleYoutubeLoad}
-                                                disabled={!youtubeUrl.trim()}
-                                                className="px-6 py-3 bg-brand text-black rounded-xl font-bold hover:bg-[#00cc33] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-                                            >
-                                                불러오기
-                                            </button>
-                                        </div>
-                                        {ytStatus === 'error' && (
-                                            <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
-                                                <AlertCircle className="w-4 h-4 shrink-0" />
-                                                {ytError}
-                                            </div>
-                                        )}
-                                        <p className="text-gray-600 text-xs text-center">
-                                            youtube.com · youtu.be 링크 지원 · cobalt.tools 경유
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
-                        </>
+                            <h3 className="text-2xl font-bold text-white mb-2">영상을 드롭하거나 클릭하여 업로드</h3>
+                            <p className="text-gray-400 text-sm">MP4, WebM 포맷 지원 · 최대 200MB · 모든 처리는 브라우저에서 실행</p>
+                        </div>
                     ) : (
                         <div className="flex flex-col md:flex-row gap-8 items-center">
                             <div className="w-full md:w-1/2 relative rounded-2xl overflow-hidden bg-black border border-neutral-800 aspect-video shadow-lg">
@@ -440,7 +292,7 @@ const VideoReferenceCollector = ({ onBack }) => {
                                 <div className="flex items-center gap-3 mb-1 max-w-full w-full">
                                     <h3 className="text-xl font-bold text-white truncate flex-1">{videoFile.name}</h3>
                                     <button
-                                        onClick={handleReplace}
+                                        onClick={() => fileInputRef.current?.click()}
                                         disabled={isWorking}
                                         className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-brand/50 text-gray-400 hover:text-white text-xs font-semibold transition-all disabled:opacity-40 disabled:cursor-not-allowed"
                                     >
