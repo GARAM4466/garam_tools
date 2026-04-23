@@ -98,32 +98,21 @@ const VideoReferenceCollector = ({ onBack }) => {
         setYtError('');
 
         try {
-            const cobaltRes = await fetch('https://api.cobalt.tools/', {
+            // Step 1: Netlify Function으로 YouTube 영상 URL 추출
+            const infoRes = await fetch('/.netlify/functions/youtube-info', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: youtubeUrl.trim() }),
             });
 
-            const data = await cobaltRes.json();
+            const info = await infoRes.json();
+            if (!infoRes.ok) throw new Error(info.error || '영상 정보를 가져올 수 없습니다.');
 
-            if (!cobaltRes.ok || data.status === 'error') {
-                const msg = data?.error?.code || data?.error?.message || data?.text || `cobalt 오류 (${cobaltRes.status})`;
-                throw new Error(msg);
-            }
-
-            let downloadUrl = data.url;
-            if (data.status === 'picker') {
-                downloadUrl = data.picker?.find(p => p.type !== 'audio')?.url || data.picker?.[0]?.url;
-            }
-            if (!downloadUrl) throw new Error('다운로드 URL을 받지 못했습니다.');
-
-            const videoRes = await fetch(downloadUrl);
+            // Step 2: YouTube CDN에서 직접 영상 다운로드
+            const videoRes = await fetch(info.url);
             if (!videoRes.ok) throw new Error('영상 다운로드에 실패했습니다.');
 
-            const total = parseInt(videoRes.headers.get('Content-Length') || '0');
+            const total = parseInt(info.contentLength || videoRes.headers.get('Content-Length') || '0');
             const reader = videoRes.body.getReader();
             const chunks = [];
             let received = 0;
@@ -136,8 +125,9 @@ const VideoReferenceCollector = ({ onBack }) => {
                 if (total > 0) setYtProgress(Math.round((received / total) * 100));
             }
 
-            const blob = new Blob(chunks, { type: 'video/mp4' });
-            const file = new File([blob], 'youtube-video.mp4', { type: 'video/mp4' });
+            const mimeType = info.mimeType?.split(';')[0] || 'video/mp4';
+            const blob = new Blob(chunks, { type: mimeType });
+            const file = new File([blob], 'youtube-video.mp4', { type: mimeType });
             loadVideoBlob(file);
             setYtStatus('idle');
             setYoutubeUrl('');
