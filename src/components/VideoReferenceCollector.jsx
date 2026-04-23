@@ -104,18 +104,14 @@ const VideoReferenceCollector = ({ onBack }) => {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                 },
-                body: JSON.stringify({
-                    url: youtubeUrl.trim(),
-                    videoQuality: '720',
-                    filenameStyle: 'basic',
-                }),
+                body: JSON.stringify({ url: youtubeUrl.trim() }),
             });
 
-            if (!cobaltRes.ok) throw new Error(`cobalt 서버 오류 (${cobaltRes.status})`);
             const data = await cobaltRes.json();
 
-            if (data.status === 'error') {
-                throw new Error(data.error?.code || '영상을 가져올 수 없습니다.');
+            if (!cobaltRes.ok || data.status === 'error') {
+                const msg = data?.error?.code || data?.error?.message || data?.text || `cobalt 오류 (${cobaltRes.status})`;
+                throw new Error(msg);
             }
 
             let downloadUrl = data.url;
