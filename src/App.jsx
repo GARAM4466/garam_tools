@@ -1,16 +1,19 @@
-import React, { useState } from 'react';
-import { Layout, Grid, Camera, Film, BookMarked, ArrowRight, Sparkles } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Layout, Grid, Clapperboard, Film, BookMarked, User, ArrowRight, Sparkles } from 'lucide-react';
 import ImageSplitterTool from './components/ImageSplitterTool';
 import VideoReferenceCollector from './components/VideoReferenceCollector';
 import PromptVault from './components/PromptVault';
+import PromptBuilderTool from './components/PromptBuilderTool';
+import CharacterGeneratorTool from './components/CharacterGeneratorTool';
 
 // --- Data ---
 const tools = [
   { id: 1,  title: 'AI 스토리보드',       description: '텍스트나 아이디어를 입력하면 AI가 자동으로 씬을 구분해 스토리보드 스케치를 생성합니다.' },
   { id: 5,  title: '이미지 그리드 분할기', description: 'Midjourney 등에서 생성된 2x2, 3x3 이미지 그리드를 개별 이미지로 빠르고 깔끔하게 분할 및 저장합니다.' },
-  { id: 7,  title: '카메라 스튜디오',      description: '다양한 카메라 구도, 렌즈 특성, 조명 세팅에 대한 레퍼런스를 검색하고 시뮬레이션 할 수 있습니다.' },
+  { id: 7,  title: '이미지 스튜디오',      description: '다양한 카메라 구도, 렌즈 특성, 조명 세팅에 대한 레퍼런스를 검색하고 시뮬레이션 할 수 있습니다.' },
   { id: 8,  title: '비디오 레퍼런스 수집기', description: '창의적인 영상 제작을 위해 고품질 비디오 레퍼런스를 장르, 무드, 색감별로 빠르게 수집하고 관리하세요.' },
   { id: 10, title: '프롬프트 라이브러리',  description: '인터넷, 강의, 커뮤니티에서 얻은 유용한 AI 프롬프트를 한 곳에 모아 빠르게 찾고 복사해서 사용하세요.' },
+  { id: 9,  title: '캐릭터 생성기',       description: '성별, 나이대, 헤어, 의상 등 외형 옵션을 선택하면 AI 이미지 생성에 최적화된 캐릭터 레퍼런스 시트 프롬프트를 자동으로 구성합니다.' },
 ];
 
 // --- Components ---
@@ -48,9 +51,10 @@ const ToolCard = ({ tool, onClick }) => {
     switch (id) {
       case 1: return <Layout className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
       case 5: return <Grid className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
-      case 7:  return <Camera     className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
+      case 7:  return <Clapperboard className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
       case 8:  return <Film       className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
       case 10: return <BookMarked className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
+      case 9:  return <User       className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
       default: return <Layout     className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
     }
   };
@@ -104,20 +108,41 @@ const Footer = () => {
 const App = () => {
   const [currentTool, setCurrentTool] = useState(null);
 
+  const navigateTo = (toolId) => {
+    window.history.pushState({ tool: toolId }, '');
+    setCurrentTool(toolId);
+  };
+
+  const navigateHome = () => {
+    setCurrentTool(null);
+  };
+
+  useEffect(() => {
+    const handlePopState = (e) => {
+      setCurrentTool(e.state?.tool ?? null);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   return (
     <div className="antialiased min-h-screen flex flex-col font-sans">
       <Header />
       <main className="flex-grow flex flex-col mt-16">
         {currentTool === 5 ? (
-          <ImageSplitterTool onBack={() => setCurrentTool(null)} />
+          <ImageSplitterTool onBack={navigateHome} />
+        ) : currentTool === 7 ? (
+          <PromptBuilderTool onBack={navigateHome} />
         ) : currentTool === 8 ? (
-          <VideoReferenceCollector onBack={() => setCurrentTool(null)} />
+          <VideoReferenceCollector onBack={navigateHome} />
         ) : currentTool === 10 ? (
-          <PromptVault onBack={() => setCurrentTool(null)} />
+          <PromptVault onBack={navigateHome} />
+        ) : currentTool === 9 ? (
+          <CharacterGeneratorTool onBack={navigateHome} />
         ) : (
           <>
             <Hero />
-            <ToolGrid onToolClick={setCurrentTool} />
+            <ToolGrid onToolClick={navigateTo} />
           </>
         )}
       </main>
