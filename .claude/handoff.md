@@ -5,80 +5,113 @@
 ---
 
 ## 📍 현재 상태
-- Netlify 무료 크레딧 소진으로 사이트 일시 중단. 다음 달 자동 복구 예정 (계정 billing cycle 기준 — 대시보드에서 확인).
-- 로컬 개발만 가능 — `npm run dev` → http://localhost:5173
-- **전체 도구 1차 완성 상태** — 쓰면서 디벨로업 방식으로 전환. 기능 추가/수정은 실사용 중 발견되는 필요에 따라 진행.
-- 캐릭터 생성기 신규 추가 완료 (id: 9)
+- 로컬 개발 — `npm run dev` → http://localhost:5173 (PM2로 항상 켜두기 가능)
+- **전체 도구 1차 완성 상태** — 쓰면서 디벨로업 방식으로 전환.
+- 캐릭터 생성기 프롬프트 엔진 고도화 완료 — 실사 기준 테스트 통과
+- **프롬프트 라이브러리 DB를 Supabase → GitHub로 이전 완료** (Supabase 무료 티어 1주 비활성 시 자동 일시정지 문제 해결)
 
 ## ✅ 완료된 작업
-- **이번 세션**: 캐릭터 생성기 (id: 9) 신규 개발
-  - 성별/나이/헤어/눈/피부/체형/의상/소품/아트스타일/표정 입력
-  - 컬러피커 + hex 텍스트 동기화 (헤어색상, 눈색상, 의상색상 최대 5개)
-  - 표정 다중 선택
-  - buildPrompt()로 GPT Image 2 최적화 영어 프롬프트 자동 조합
-  - Seedream 4.5 (bytedance-seed/seedream-4.5) 미리보기 이미지 생성
+
+### 2026-05-23 세션: 프롬프트 라이브러리 DB를 GitHub로 이전
+- **배경**: Supabase 무료 티어가 1주일 비활성 시 자동 일시정지 → 한 달쯤 지나면 DB 잠김
+- **신규 파일**: `src/lib/github.js` — GitHub Contents API 클라이언트 (`fetch`만 사용, 외부 SDK 없음)
+  - `fetchPrompts / savePrompt / deletePrompt` → `prompts.json` 한 파일에 배열로 저장 (읽기→쓰기 2-call, 저장마다 커밋 생성)
+  - `uploadThumbnail / deleteThumbnailByUrl` → `thumbnails/` 폴더에 파일 커밋, `raw.githubusercontent.com` URL로 표시
+- **`PromptVault.jsx`**: Supabase 호출 전부 GitHub API로 교체, 모달에 저장 에러 표시(`saveError`) 추가
+- **데이터 레포**: `GARAM4466/garam_tools_DB` (public — 썸네일 raw URL 표시 위해 public 필수, private면 `<img>` 인증 안 됨)
+- **인증**: fine-grained PAT (`garam_tools_DB` 레포 한정, Contents Read+write). `VITE_GITHUB_TOKEN`으로 주입
+  - 로컬 `.env.local` + Netlify 환경변수 양쪽에 설정
+  - ⚠️ 클라이언트 번들에 박히므로 노출됨 — fine-grained라 피해는 이 레포 하나로 한정
+- **상태바**: 현재 디렉토리 / 모델명 / 컨텍스트 사용량 표시 (`.claude/settings.json`)
+
+### 이전 세션 2차: 영상 스타일 시스템 도입
+
+- **"아트 스타일" 제거 → "영상 스타일" 3버튼 교체**
+  - 시네마틱: 기존 photorealistic/cinematic 프롬프트 그대로 유지
+  - 광고: 커머셜 5가지 치환 원칙 적용
+    - 피부: `realistic skin / visible pores` → `satin-skin finish, poreless appearance`
+    - 조명: `natural lighting` → `butterfly beauty lighting, softbox setup`
+    - 맥락: `cinematic` → `commercial photography aesthetic`
+    - 품질: `photorealistic` → `magazine editorial quality`
+    - 색감: `dark / moody` → `high-key clean, minimal shadow`
+    - **Creative Direction 자동 치환 규칙 내장**: 컨셉 노트에 충돌 키워드를 써도 Claude가 먼저 커머셜 동의어로 치환 후 프롬프트 작성. Visual Style이 Creative Direction보다 항상 우선.
+    - MOOD REFERENCE 패널 묘사도 commercial 씬으로 치환 (lifestyle campaign, beauty studio, luxury editorial 등)
+  - 애니메이션: Pixar/DreamWorks 3D CGI 스타일, character bible 방향
+- **default fallback**: `anime style` → `cinematic`
+- **파일 변경**: `CharacterGeneratorTool.jsx` (UI/state), `openrouter.js` (STYLE_GUIDE 전면 교체)
+
+### 이번 세션 1차: 캐릭터 생성기 전면 고도화
+- **UI 구조 변경**: 토글 방식 → 8개 텍스트 슬롯 방식 (Character Requirements 블록)
+  - 슬롯: 국적/성별/연령대, 얼굴형+인상, 눈/코/입 특징, 헤어, 체형, 퍼스널 컬러/무드, 포지션/콘셉트, 스타일링 방향성
+  - 전체 분위기/컨셉 textarea 유지, 아트 스타일 토글 유지
+  - 표정 토글 제거 (섹션 구조 변경으로 불필요)
+- **프롬프트 생성 방식**: 템플릿 조합 → `anthropic/claude-sonnet-4-5` AI 생성
+- **이미지 생성 응답 파싱**: `message.images` 배열 처리 추가 (Seedream 4.5 실제 응답 구조 대응)
+- **프롬프트 구조 확정**: 100점 프롬프트 기반 6블록 구조 (도입 → 레이아웃 문단 → 섹션 리스트 → Overall aesthetic → Character requirements → Important)
+- **섹션 구성 변경**:
+  - 제거: 서브 포트레이트, 감정 표현 시트
+  - 추가/격상: CHARACTER MOOD REFERENCE (시트 1/3 이상 점유, 4~6개 시네마틱 패널 — 다양한 환경/조명/상황에서 인물 표현)
+  - 추가: Profile information section (name, age, height, position, personality, charm points 등 한국어 라벨)
+- **7가지 프롬프트 작성 규칙 적용**: 섹션 내 품질 키워드 금지, 부정 프롬프트 위치 고정, 키워드 반복 금지 등
+- **아트 스타일별 차별화 지시**: realistic 전용 `instructions` 필드 — 블록별 작성 가이드 포함
+- **타이포그래피 강제 삽입**: Claude 생성 프롬프트 뒤에 코드로 직접 추가 (항상 포함 보장)
+  - Profile information section 문구
+  - Pretendard/Noto Sans KR 계열, 한영 병기 라벨, no garbled Korean characters 등
+
+### 이전 세션 완료 항목
 - 이미지 그리드 분할기 (100%)
-- 비디오 레퍼런스 수집기 (100%) — diff 소형 캔버스 + 루미넌스 최적화, 영상 교체 버튼, 200MB 지원
-  - **이번 세션 추가**: 라이트박스(이미지 클릭 → 크게 보기 + 방향키 이동 + 다운로드 + Esc/배경 클릭 닫기)
-  - **이번 세션 추가**: 원본 해상도 캡처 (OUTPUT_WIDTH=480 제거 → video.videoWidth/videoHeight 사용)
-- 프롬프트 라이브러리 (100%) — Supabase 연동, 썸네일 업로드 + 드래그 포커스 포인트
-- 홈 화면 UI
+- 비디오 레퍼런스 수집기 (100%) — 라이트박스, 원본 해상도 캡처
+- 프롬프트 라이브러리 (100%) — Supabase 연동
+- 이미지 스튜디오 (100%) — OpenRouter `google/gemini-2.0-flash-exp` 연동, 5개 플랫폼
+- 브라우저 뒤로가기 정상 동작
 - GitHub + Netlify 자동 배포 연결
-- **이번 세션**: 브라우저 뒤로가기 버튼 정상 동작 (App.jsx에 history.pushState + popstate 리스너 추가)
-- **이번 세션**: 카메라 스튜디오 → "이미지 스튜디오"로 이름 변경
-- **이번 세션**: 이미지 스튜디오 (= 샷 프롬프트 빌더) 도구 신규 개발 (id: 7)
-  - 좌측: 레퍼런스 이미지 업로드 + BASE 프롬프트(잠금 토글)
-  - 가운데: 씬 이름 + 9개 카테고리 탭 + 태그 pill + customText
-  - 우측: 씬 목록(추가/삭제) + 플랫폼별 출력(KO/EN, 복사)
-  - localStorage 자동저장 (key: `prompt-builder-state-v1`, 500ms debounce)
-  - 씬 1개 남으면 삭제 버튼 비활성, 활성 씬 삭제 시 첫 씬으로 이동
-- **이번 세션**: OpenRouter API 연동 (google/gemini-2.0-flash-exp)
-  - 로컬 실시간 빌드 로직 완전 제거 → AI 호출로 전환
-  - 5개 플랫폼: Midjourney / Google Flow / ChatGPT Images / 범용(gen) / JSON
-  - 한국어 customText 자동 번역 + 태그 충돌 지능 처리 (system prompt에 명시)
-  - "프롬프트 생성" 버튼 / 로딩 스피너 / 에러 메시지 박스
-  - 씬 변경 시 결과 자동 초기화
 
 ## 🔜 다음 할 일
-1. AI 스토리보드 도구 개발
-2. **API 키 회전** — 채팅창 노출되었으므로 OpenRouter 대시보드에서 새 키 발급 권장
-3. 실사용 중 발견되는 개선사항 디벨로업
+1. 캐릭터 생성기 3가지 영상 스타일 테스트 (시네마틱/광고/애니메이션)
+2. AI 스토리보드 도구 개발
+3. **API 키 회전** — OpenRouter 대시보드에서 새 키 발급 권장
 
 ## 🔒 결정된 사항
-- 도구 목록: AI 스토리보드 / 이미지 그리드 분할기 / **이미지 스튜디오** / 비디오 레퍼런스 수집기 / 프롬프트 라이브러리 / **캐릭터 생성기** (6개)
+- 도구 목록: AI 스토리보드 / 이미지 그리드 분할기 / 이미지 스튜디오 / 비디오 레퍼런스 수집기 / 프롬프트 라이브러리 / 캐릭터 생성기 (6개)
 - 배포: Netlify 자동 배포 (git push 시 반영)
 - 개발 서버 포트: 5173 고정
-- Supabase: prompts 테이블 (id, title, content, tags, memo, thumbnail_url, thumbnail_position, created_at, updated_at)
-- RLS: anon 전체 허용 (개인용)
-- **이미지 스튜디오 플랫폼 키**: `mj` / `flow` / `gpt` / `gen` / `json` (스펙 정합)
-- **OpenRouter 모델**: `google/gemini-2.0-flash-exp` (max_tokens 1000) — 이미지 스튜디오
+- **프롬프트 라이브러리 저장소**: GitHub `GARAM4466/garam_tools_DB` (public) — `prompts.json` + `thumbnails/`
+  - 프롬프트 객체: id(uuid), title, content, tags, memo, thumbnail_url, thumbnail_position, created_at, updated_at
+  - 인증: fine-grained PAT, `VITE_GITHUB_TOKEN` (로컬 .env.local + Netlify 환경변수)
+  - 이미지 스튜디오/캐릭터 생성기는 여전히 Supabase 미사용 (OpenRouter만 사용), 기존 Supabase 프로젝트는 사실상 미사용 상태
+- **이미지 스튜디오 플랫폼 키**: `mj` / `flow` / `gpt` / `gen` / `json`
+- **OpenRouter 모델 (이미지 스튜디오)**: `google/gemini-2.0-flash-exp` (max_tokens 1000)
+- **OpenRouter 모델 (캐릭터 생성기 프롬프트)**: `anthropic/claude-sonnet-4-5` (max_tokens 1500)
 - **캐릭터 생성기 이미지 모델**: `bytedance-seed/seedream-4.5` (modalities: ["image"])
-- **AI 분석 버튼**: Phase 2로 보류 (disabled + tooltip)
+- **캐릭터 프롬프트 구조**: 6블록 고정 (Claude 생성 + mandatory 강제 삽입 후처리)
+- **영상 스타일 키**: `cinematic` / `commercial` / `animation` — STYLE_GUIDE에 각각 전용 instructions 포함
+- **광고 스타일 자동 치환**: Creative Direction 충돌 키워드를 Claude가 커머셜 동의어로 자동 치환 (instructions 내 override 규칙)
 
 ## ⚠️ 열린 문제
 - Netlify 크레딧 소진 — 다음 달 자동 리셋. 현재 사이트 접속 불가.
 - **🔴 OpenRouter API 키 보안 이슈**:
-  - 채팅창에 평문 노출됨 → 작업 검증 후 키 회전 필요
+  - 채팅창에 평문 노출됨 → 키 회전 필요
   - Vite `import.meta.env.VITE_*`는 빌드 시 클라이언트 번들에 박힘 → 배포 시 누구나 추출 가능
   - 향후 보안 강화 시: Netlify Function 프록시로 서버사이드 호출 고려
-  - OpenRouter 대시보드에서 사용량/지출 한도 설정 권장
 
 ## 🐛 알려진 이슈
-- (테스트 후 발견 시 추가)
+- (발견 시 추가)
 
 ## 📁 주요 파일 경로
-- 메인: src/App.jsx (history 기반 라우팅, 5개 도구 분기)
+- 메인: src/App.jsx (history 기반 라우팅, 도구 분기)
 - 이미지 분할기: src/components/ImageSplitterTool.jsx
 - 비디오 수집기: src/components/VideoReferenceCollector.jsx
-- 프롬프트 라이브러리: src/components/PromptVault.jsx
-- **이미지 스튜디오**: src/components/PromptBuilderTool.jsx
+- 프롬프트 라이브러리: src/components/PromptVault.jsx (GitHub API 연동)
+- 이미지 스튜디오: src/components/PromptBuilderTool.jsx
 - **캐릭터 생성기**: src/components/CharacterGeneratorTool.jsx
-- Supabase 클라이언트: src/lib/supabase.js
-- **OpenRouter 클라이언트**: src/lib/openrouter.js
-- 환경변수: .env.local (gitignore됨, `*.local` 패턴)
-  - VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY / **VITE_OPENROUTER_API_KEY**
+- **GitHub 클라이언트**: src/lib/github.js (프롬프트 라이브러리 DB+스토리지)
+- Supabase 클라이언트: src/lib/supabase.js (현재 미사용)
+- **OpenRouter 클라이언트**: src/lib/openrouter.js (캐릭터 생성기 + 이미지 스튜디오 공용)
+- 환경변수: .env.local (gitignore됨)
+  - VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY / VITE_OPENROUTER_API_KEY / VITE_GITHUB_TOKEN
+  - Netlify에도 동일 환경변수 등록 필요 (특히 VITE_GITHUB_TOKEN)
 - 배포 URL: https://garamtools.netlify.app
 - GitHub: https://github.com/GARAM4466/garam_tools
 
 ---
-_Last updated: 2026-04-27 (캐릭터 생성기 신규 추가)_
+_Last updated: 2026-05-23 (프롬프트 라이브러리 DB Supabase → GitHub 이전, Netlify 배포 반영)_
