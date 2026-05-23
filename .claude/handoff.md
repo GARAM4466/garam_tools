@@ -23,6 +23,7 @@
   - 로컬 `.env.local` + Netlify 환경변수 양쪽에 설정
   - ⚠️ 클라이언트 번들에 박히므로 노출됨 — fine-grained라 피해는 이 레포 하나로 한정
 - **상태바**: 현재 디렉토리 / 모델명 / 컨텍스트 사용량 표시 (`.claude/settings.json`)
+- **검증 완료**: 로컬(localhost:5173) + 배포 사이트(garamtools.netlify.app) 양쪽에서 프롬프트 저장 정상 작동 확인
 
 ### 이전 세션 2차: 영상 스타일 시스템 도입
 
@@ -67,9 +68,10 @@
 - GitHub + Netlify 자동 배포 연결
 
 ## 🔜 다음 할 일
-1. 캐릭터 생성기 3가지 영상 스타일 테스트 (시네마틱/광고/애니메이션)
-2. AI 스토리보드 도구 개발
-3. **API 키 회전** — OpenRouter 대시보드에서 새 키 발급 권장
+1. **classic GitHub 토큰 폐기** (위 열린 문제 참고)
+2. 캐릭터 생성기 3가지 영상 스타일 테스트 (시네마틱/광고/애니메이션)
+3. AI 스토리보드 도구 개발 (App.jsx에 분기 미구현 — 카드만 존재)
+4. **OpenRouter API 키 회전** — 대시보드에서 새 키 발급 권장
 
 ## 🔒 결정된 사항
 - 도구 목록: AI 스토리보드 / 이미지 그리드 분할기 / 이미지 스튜디오 / 비디오 레퍼런스 수집기 / 프롬프트 라이브러리 / 캐릭터 생성기 (6개)
@@ -88,11 +90,12 @@
 - **광고 스타일 자동 치환**: Creative Direction 충돌 키워드를 Claude가 커머셜 동의어로 자동 치환 (instructions 내 override 규칙)
 
 ## ⚠️ 열린 문제
-- Netlify 크레딧 소진 — 다음 달 자동 리셋. 현재 사이트 접속 불가.
-- **🔴 OpenRouter API 키 보안 이슈**:
-  - 채팅창에 평문 노출됨 → 키 회전 필요
-  - Vite `import.meta.env.VITE_*`는 빌드 시 클라이언트 번들에 박힘 → 배포 시 누구나 추출 가능
-  - 향후 보안 강화 시: Netlify Function 프록시로 서버사이드 호출 고려
+- **🟡 classic GitHub 토큰(`ghp_BKHV...`) 폐기 필요** — 채팅에 노출됐고 계정 전체 `repo` 권한. `github.com/settings/tokens`에서 삭제. (현재 앱은 fine-grained 토큰만 사용하므로 삭제해도 영향 없음)
+- **🔴 클라이언트 번들 키 노출 (구조적)**:
+  - `VITE_OPENROUTER_API_KEY`, `VITE_GITHUB_TOKEN` 모두 빌드 시 클라이언트 번들에 박힘 → 배포 사이트에서 누구나 추출 가능
+  - GitHub 토큰은 fine-grained라 피해가 `garam_tools_DB` 한 레포로 한정됨 (수용한 트레이드오프)
+  - OpenRouter 키는 회전 권장
+  - 근본 해결: Netlify Function 프록시로 서버사이드 호출 (Netlify 크레딧 여유 있을 때 고려)
 
 ## 🐛 알려진 이슈
 - (발견 시 추가)
