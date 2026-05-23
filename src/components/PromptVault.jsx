@@ -1,15 +1,17 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { ArrowLeft, BookMarked, Search, Plus, Edit2, Trash2, Copy, Check, X, ImagePlus, Move } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import {
+    fetchPrompts as ghFetchPrompts,
+    savePrompt as ghSavePrompt,
+    deletePrompt as ghDeletePrompt,
+    uploadThumbnail as ghUploadThumbnail,
+    deleteThumbnailByUrl,
+} from '../lib/github';
 
 const EMPTY_FORM = { title: '', content: '', tagsInput: '', memo: '', thumbnail_url: '', thumbnail_position: '50% 50%' };
 
-const getThumbnailPath = (url) => {
-    if (!url) return null;
-    const marker = '/thumbnails/';
-    const idx = url.indexOf(marker);
-    return idx !== -1 ? url.slice(idx + marker.length) : null;
-};
+const isVideoUrl = (url) => url && /\.(mp4|webm|mov)(\?|$)/i.test(url);
+const isVideoFile = (file) => file && file.type.startsWith('video/');
 
 const getPositionFromEvent = (e, container) => {
     const rect = container.getBoundingClientRect();
@@ -31,6 +33,7 @@ const PromptVault = ({ onBack }) => {
     const [thumbnailFile, setThumbnailFile] = useState(null);
     const [thumbnailPreview, setThumbnailPreview] = useState('');
     const [saving, setSaving] = useState(false);
+    const [saveError, setSaveError] = useState(null);
     const [copiedId, setCopiedId] = useState(null);
     const [deleteConfirmId, setDeleteConfirmId] = useState(null);
     const fileInputRef = useRef(null);
@@ -41,9 +44,14 @@ const PromptVault = ({ onBack }) => {
 
     const fetchPrompts = async () => {
         setLoading(true);
-        const { data } = await supabase.from('prompts').select('*').order('created_at', { ascending: false });
-        setPrompts(data || []);
-        setLoading(false);
+        try {
+            const data = await ghFetchPrompts();
+            setPrompts(data);
+        } catch (e) {
+            console.error('프롬프트 불러오기 실패:', e);
+        } finally {
+            setLoading(false);
+        }
     };
 
     const allTags = useMemo(() =>
@@ -61,6 +69,7 @@ const PromptVault = ({ onBack }) => {
         setForm(EMPTY_FORM);
         setThumbnailFile(null);
         setThumbnailPreview('');
+        setSaveError(null);
         setModalOpen(true);
     };
 
@@ -76,6 +85,7 @@ const PromptVault = ({ onBack }) => {
         });
         setThumbnailFile(null);
         setThumbnailPreview(p.thumbnail_url || '');
+        setSaveError(null);
         setModalOpen(true);
     };
 
@@ -93,7 +103,7 @@ const PromptVault = ({ onBack }) => {
         if (thumbnailFile) URL.revokeObjectURL(thumbnailPreview);
         setThumbnailFile(file);
         setThumbnailPreview(URL.createObjectURL(file));
-        updateForm('thumbnail_position', '50% 50%');
+        if (!isVideoFile(file)) updateForm('thumbnail_position', '50% 50%');
         e.target.value = '';
     };
 
@@ -121,26 +131,17 @@ const PromptVault = ({ onBack }) => {
         isDraggingRef.current = false;
     };
 
-    const uploadThumbnail = async (file) => {
-        const ext = file.name.split('.').pop();
-        const path = `${Date.now()}.${ext}`;
-        const { error } = await supabase.storage.from('thumbnails').upload(path, file);
-        if (error) throw error;
-        return supabase.storage.from('thumbnails').getPublicUrl(path).data.publicUrl;
-    };
-
     const savePrompt = async () => {
         if (!form.title.trim() || !form.content.trim()) return;
         setSaving(true);
+        setSaveError(null);
         try {
             let thumbnail_url = form.thumbnail_url;
             if (thumbnailFile) {
-                const oldPath = getThumbnailPath(editingPrompt?.thumbnail_url);
-                if (oldPath) await supabase.storage.from('thumbnails').remove([oldPath]);
-                thumbnail_url = await uploadThumbnail(thumbnailFile);
+                await deleteThumbnailByUrl(editingPrompt?.thumbnail_url);
+                thumbnail_url = await ghUploadThumbnail(thumbnailFile);
             } else if (!thumbnailPreview && editingPrompt?.thumbnail_url) {
-                const oldPath = getThumbnailPath(editingPrompt.thumbnail_url);
-                if (oldPath) await supabase.storage.from('thumbnails').remove([oldPath]);
+                await deleteThumbnailByUrl(editingPrompt.thumbnail_url);
                 thumbnail_url = null;
             }
             const tags = form.tagsInput.split(',').map(t => t.trim()).filter(Boolean);
@@ -152,13 +153,12 @@ const PromptVault = ({ onBack }) => {
                 thumbnail_url: thumbnail_url || null,
                 thumbnail_position: thumbnailPreview ? form.thumbnail_position : null,
             };
-            if (editingPrompt) {
-                await supabase.from('prompts').update(payload).eq('id', editingPrompt.id);
-            } else {
-                await supabase.from('prompts').insert(payload);
-            }
+            await ghSavePrompt(payload, editingPrompt?.id ?? null);
             closeModal();
             fetchPrompts();
+        } catch (e) {
+            console.error('저장 실패:', e);
+            setSaveError(e.message || '알 수 없는 오류로 저장에 실패했습니다.');
         } finally {
             setSaving(false);
         }
@@ -166,9 +166,8 @@ const PromptVault = ({ onBack }) => {
 
     const deletePrompt = async (id) => {
         const target = prompts.find(p => p.id === id);
-        const path = getThumbnailPath(target?.thumbnail_url);
-        if (path) await supabase.storage.from('thumbnails').remove([path]);
-        await supabase.from('prompts').delete().eq('id', id);
+        await deleteThumbnailByUrl(target?.thumbnail_url);
+        await ghDeletePrompt(id);
         setDeleteConfirmId(null);
         fetchPrompts();
     };
@@ -256,12 +255,20 @@ const PromptVault = ({ onBack }) => {
                         <div key={p.id} className="group bg-cardBg border border-cardBorder hover:border-brand/30 rounded-2xl overflow-hidden flex flex-col transition-colors">
                             {p.thumbnail_url && (
                                 <div className="w-full aspect-video overflow-hidden bg-neutral-900">
-                                    <img
-                                        src={p.thumbnail_url}
-                                        alt={p.title}
-                                        className="w-full h-full object-cover transform transition-transform duration-500 group-hover:scale-105"
-                                        style={{ objectPosition: p.thumbnail_position || '50% 50%' }}
-                                    />
+                                    {isVideoUrl(p.thumbnail_url) ? (
+                                        <video
+                                            src={p.thumbnail_url}
+                                            autoPlay loop muted playsInline
+                                            className="w-full h-full object-cover"
+                                        />
+                                    ) : (
+                                        <img
+                                            src={p.thumbnail_url}
+                                            alt={p.title}
+                                            className="w-full h-full object-cover transform transition-transform duration-500 group-hover:scale-105"
+                                            style={{ objectPosition: p.thumbnail_position || '50% 50%' }}
+                                        />
+                                    )}
                                 </div>
                             )}
                             <div className="p-5 flex flex-col gap-3 flex-1">
@@ -312,42 +319,53 @@ const PromptVault = ({ onBack }) => {
                             {/* 썸네일 */}
                             <div>
                                 <label className="text-xs text-gray-400 font-semibold mb-1.5 block">썸네일</label>
-                                <input type="file" ref={fileInputRef} onChange={handleThumbnailSelect} accept="image/*" className="hidden" />
+                                <input type="file" ref={fileInputRef} onChange={handleThumbnailSelect} accept="image/*,video/mp4,video/webm" className="hidden" />
                                 {thumbnailPreview ? (
                                     <div className="flex flex-col gap-2">
-                                        {/* 드래그 가능한 포커스 포인트 지정 영역 */}
-                                        <div
-                                            ref={dragContainerRef}
-                                            className="relative w-full aspect-video rounded-xl overflow-hidden bg-neutral-800 cursor-crosshair select-none"
-                                            onPointerDown={handlePointerDown}
-                                            onPointerMove={handlePointerMove}
-                                            onPointerUp={handlePointerUp}
-                                        >
-                                            <img
-                                                src={thumbnailPreview}
-                                                alt="thumbnail"
-                                                className="w-full h-full object-cover pointer-events-none"
-                                                style={{ objectPosition: form.thumbnail_position }}
-                                                draggable={false}
-                                            />
-                                            {/* 포커스 포인트 인디케이터 */}
-                                            <div
-                                                className="absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-                                                style={{ left: `${fpX}%`, top: `${fpY}%` }}
-                                            >
-                                                <div className="w-full h-full rounded-full border-2 border-white shadow-lg bg-white/20" />
-                                                <div className="absolute inset-0 flex items-center justify-center">
-                                                    <div className="w-1 h-1 rounded-full bg-white" />
+                                        {(isVideoFile(thumbnailFile) || isVideoUrl(thumbnailPreview)) ? (
+                                            /* 영상 미리보기 — 포커스포인트 없음 */
+                                            <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-neutral-800">
+                                                <video
+                                                    src={thumbnailPreview}
+                                                    autoPlay loop muted playsInline
+                                                    className="w-full h-full object-cover"
+                                                />
+                                                <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-lg pointer-events-none">
+                                                    영상 자동재생
                                                 </div>
                                             </div>
-                                            {/* 안내 레이블 */}
-                                            <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-lg pointer-events-none">
-                                                <Move className="w-3 h-3" /> 드래그하여 포커스 포인트 지정
+                                        ) : (
+                                            /* 이미지/GIF 미리보기 — 포커스포인트 드래그 */
+                                            <div
+                                                ref={dragContainerRef}
+                                                className="relative w-full aspect-video rounded-xl overflow-hidden bg-neutral-800 cursor-crosshair select-none"
+                                                onPointerDown={handlePointerDown}
+                                                onPointerMove={handlePointerMove}
+                                                onPointerUp={handlePointerUp}
+                                            >
+                                                <img
+                                                    src={thumbnailPreview}
+                                                    alt="thumbnail"
+                                                    className="w-full h-full object-cover pointer-events-none"
+                                                    style={{ objectPosition: form.thumbnail_position }}
+                                                    draggable={false}
+                                                />
+                                                <div
+                                                    className="absolute w-5 h-5 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+                                                    style={{ left: `${fpX}%`, top: `${fpY}%` }}
+                                                >
+                                                    <div className="w-full h-full rounded-full border-2 border-white shadow-lg bg-white/20" />
+                                                    <div className="absolute inset-0 flex items-center justify-center">
+                                                        <div className="w-1 h-1 rounded-full bg-white" />
+                                                    </div>
+                                                </div>
+                                                <div className="absolute bottom-2 left-2 flex items-center gap-1.5 bg-black/60 backdrop-blur-sm text-white text-xs px-2 py-1 rounded-lg pointer-events-none">
+                                                    <Move className="w-3 h-3" /> 드래그하여 포커스 포인트 지정
+                                                </div>
                                             </div>
-                                        </div>
-                                        {/* 교체/제거 버튼 */}
+                                        )}
                                         <div className="flex gap-2">
-                                            <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-1.5 text-xs font-semibold text-gray-400 hover:text-white border border-neutral-700 hover:border-neutral-600 rounded-lg transition-all">이미지 교체</button>
+                                            <button onClick={() => fileInputRef.current?.click()} className="flex-1 py-1.5 text-xs font-semibold text-gray-400 hover:text-white border border-neutral-700 hover:border-neutral-600 rounded-lg transition-all">미디어 교체</button>
                                             <button onClick={removeThumbnailPreview} className="flex-1 py-1.5 text-xs font-semibold text-red-400 border border-red-500/30 hover:bg-red-500/10 rounded-lg transition-all">제거</button>
                                         </div>
                                     </div>
@@ -355,7 +373,7 @@ const PromptVault = ({ onBack }) => {
                                     <button onClick={() => fileInputRef.current?.click()}
                                         className="w-full aspect-video rounded-xl border-2 border-dashed border-neutral-700 hover:border-brand/50 bg-neutral-900/50 hover:bg-neutral-800/50 flex flex-col items-center justify-center gap-2 text-gray-500 hover:text-gray-300 transition-all">
                                         <ImagePlus className="w-7 h-7" />
-                                        <span className="text-xs font-medium">클릭하여 이미지 업로드</span>
+                                        <span className="text-xs font-medium">클릭하여 이미지 / GIF / 영상 업로드</span>
                                     </button>
                                 )}
                             </div>
@@ -384,6 +402,12 @@ const PromptVault = ({ onBack }) => {
                                     className="w-full bg-black/50 border border-neutral-800 focus:border-brand rounded-xl px-4 py-2.5 text-white text-sm outline-none transition-colors" />
                             </div>
                         </div>
+
+                        {saveError && (
+                            <div className="mx-6 mb-1 px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs leading-relaxed break-words">
+                                저장 실패: {saveError}
+                            </div>
+                        )}
 
                         <div className="flex gap-3 px-6 py-4 border-t border-neutral-800">
                             <button onClick={closeModal} className="flex-1 py-2.5 rounded-xl border border-neutral-700 text-gray-400 hover:text-white hover:border-neutral-600 text-sm font-semibold transition-all">취소</button>
