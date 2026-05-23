@@ -56,4 +56,23 @@
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.15);
   }
+
+  .ctrl-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: 0.5rem;
+    background-color: #1f1f1f;
+    border: 1px solid #2a2a2a;
+    color: #fff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+  }
+
+  .ctrl-btn:hover {
+    background-color: #2a2a2a;
+    border-color: rgba(0, 255, 65, 0.4);
+  }
 }

@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Grid, Clapperboard, Film, BookMarked, User, ArrowRight, Sparkles } from 'lucide-react';
+import { Layout, Grid, Clapperboard, Film, BookMarked, User, ArrowRight, Sparkles, MousePointerClick } from 'lucide-react';
 import ImageSplitterTool from './components/ImageSplitterTool';
 import VideoReferenceCollector from './components/VideoReferenceCollector';
 import PromptVault from './components/PromptVault';
 import PromptBuilderTool from './components/PromptBuilderTool';
 import CharacterGeneratorTool from './components/CharacterGeneratorTool';
+import HtmlSelectorTool from './components/HtmlSelectorTool';
 
 // --- Data ---
 const tools = [
@@ -14,6 +15,7 @@ const tools = [
   { id: 8,  title: '비디오 레퍼런스 수집기', description: '창의적인 영상 제작을 위해 고품질 비디오 레퍼런스를 장르, 무드, 색감별로 빠르게 수집하고 관리하세요.' },
   { id: 10, title: '프롬프트 라이브러리',  description: '인터넷, 강의, 커뮤니티에서 얻은 유용한 AI 프롬프트를 한 곳에 모아 빠르게 찾고 복사해서 사용하세요.' },
   { id: 9,  title: '캐릭터 생성기',       description: '성별, 나이대, 헤어, 의상 등 외형 옵션을 선택하면 AI 이미지 생성에 최적화된 캐릭터 레퍼런스 시트 프롬프트를 자동으로 구성합니다.' },
+  { id: 11, title: 'HTML 셀렉터',        description: '4분할 그리드 이미지 폴더를 열면 각 컷을 분리해 보여줍니다. 좋은 컷만 클릭해 고르고, 잘린 PNG와 selection.json으로 내보내 업스케일링 파이프라인에 넘깁니다.' },
 ];
 
 // --- Components ---
@@ -55,6 +57,7 @@ const ToolCard = ({ tool, onClick }) => {
       case 8:  return <Film       className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
       case 10: return <BookMarked className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
       case 9:  return <User       className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
+      case 11: return <MousePointerClick className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
       default: return <Layout     className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
     }
   };
@@ -139,6 +142,8 @@ const App = () => {
           <PromptVault onBack={navigateHome} />
         ) : currentTool === 9 ? (
           <CharacterGeneratorTool onBack={navigateHome} />
+        ) : currentTool === 11 ? (
+          <HtmlSelectorTool onBack={navigateHome} />
         ) : (
           <>
             <Hero />

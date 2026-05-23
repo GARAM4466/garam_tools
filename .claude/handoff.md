@@ -12,6 +12,27 @@
 
 ## ✅ 완료된 작업
 
+### 2026-05-23 세션 2차: HTML 셀렉터 도구 추가 (id 11)
+- **워크플로우**: 폴더 안의 각 파일 = 4분할 그리드 이미지 1장. 셀렉터가 **캔버스로 그 파일을 셀별로 잘라** 보여줌 → 좋은 컷 클릭 선택 → 잘린 PNG + selection.json export → 업스케일링(Higgsfield MCP 등)에 투입.
+- **이미지 접근**: File System Access API (`showDirectoryPicker`) — 폴더 한 번 선택하면 하위까지 재귀 스캔, 업로드/사전 manifest 스크립트 불필요. F드라이브 등 로컬 폴더 직접 읽음. 미지원 브라우저(FF/Safari)는 `<input webkitdirectory>` 폴백.
+- **신규 파일**:
+  - `src/lib/fileSystem.js` — FS Access 래퍼: 폴더 선택/재귀 스캔, IndexedDB 핸들 영속화("이전 폴더 다시 열기"), verifyPermission, getSubdirHandle/writeBlobToDirectory/writeJsonToDirectory, webkitdirectory 폴백
+  - `src/lib/imageGrid.js` — `GRID_MODES`(2x2 / 1x4) + `cropFileToCells(file, rows, cols, type, quality)` (createImageBitmap + canvas, row-major 셀 순서)
+  - `src/components/HtmlSelectorTool.jsx` — 메인 UI
+- **그리드 분할**: 토글 2모드 — **2x2(4분할)** / **1x4(세로 4칸)**. 한 파일 = 한 그룹 행, 셀 4개에 1~4 번호 badge.
+- **선택**: cell id = `relativePath#idx`. `selected` Set, 클릭 토글, 노란 테두리. localStorage 자동 저장 키 = `html-selector:selection:{folder}:{gridMode}` (모드별 분리). 새로고침 유지.
+- **컨트롤바**(sticky top-16): 카운터(cells/files/selected) / 그리드 모드 토글 / 보이는 컷 전체 선택 / 전체 해제 / 폴더에 저장(FS 시) / Export(PNG+JSON).
+- **Export 2종**:
+  - `Export (PNG + JSON)`: ZIP 다운로드. `images/*.png`(풀해상도 크롭) + `selection.json`. 어디서나 동작.
+  - `폴더에 저장`(FS 지원 시): 원본 폴더 안 `_selected_<timestamp>/` 하위에 `images/` PNG + selection.json 직접 기록.
+  - ⚠️ 표시는 빠르게 jpeg 0.82로 크롭, **export는 SELECTED 셀만 풀해상도 PNG 재크롭**.
+- **selection.json 스키마**: `{ project_id, exported_at, grid, total_files, total_cells, total_selected, items[{id, source_file, source_folder, cell_index, grid, output_file}] }`
+- **필터 탭**: top-level 하위폴더 자동 생성 (All + 폴더명)
+- **성능**: GroupRow가 IntersectionObserver로 viewport 진입 시에만 파일 1회 디코드→4셀 크롭→objectURL, 언마운트 시 revoke.
+- **App.jsx**: tools id 11, MousePointerClick 아이콘, 라우팅 분기. **index.css**: `.ctrl-btn` 추가.
+- **검증**: `npm run build` 통과(1741 모듈), 신규 파일 lint clean. ⚠️ 폴더 선택→크롭 표시→export 인터랙션은 네이티브 다이얼로그 필요 → 브라우저 수동 테스트 필요(미완).
+- **다음 단계 아이디어**: export된 PNG/selection.json을 Higgsfield MCP 업스케일에 연결 (별도 작업).
+
 ### 2026-05-23 세션: 프롬프트 라이브러리 DB를 GitHub로 이전
 - **배경**: Supabase 무료 티어가 1주일 비활성 시 자동 일시정지 → 한 달쯤 지나면 DB 잠김
 - **신규 파일**: `src/lib/github.js` — GitHub Contents API 클라이언트 (`fetch`만 사용, 외부 SDK 없음)
