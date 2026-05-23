@@ -6,7 +6,9 @@
 
 ## 📍 현재 상태
 - 로컬 개발 — `npm run dev` → http://localhost:5173 (PM2로 항상 켜두기 가능)
-- **전체 도구 1차 완성 상태** — 쓰면서 디벨로업 방식으로 전환.
+- **전체 도구 1차 완성 상태** — 쓰면서 디벨로업 방식으로 전환. 도구 7개 (HTML 셀렉터 추가됨, id 11)
+- **HTML 셀렉터 완성 + 푸시·배포 완료** (commit `7e90701`). 사용자 검증: 2x2/1x4 분할·선택·ZIP 다운로드 정상 작동 확인.
+- **⏸ 다음 작업은 사용자가 CLI(Claude Code)로 이어서 진행 예정** — 세션 시작 시 이 파일부터 읽을 것. git 푸시 완료라 상태 동기화 OK, `npm run dev`만 실행하면 됨.
 - 캐릭터 생성기 프롬프트 엔진 고도화 완료 — 실사 기준 테스트 통과
 - **프롬프트 라이브러리 DB를 Supabase → GitHub로 이전 완료** (Supabase 무료 티어 1주 비활성 시 자동 일시정지 문제 해결)
 
@@ -30,8 +32,18 @@
 - **필터 탭**: top-level 하위폴더 자동 생성 (All + 폴더명)
 - **성능**: GroupRow가 IntersectionObserver로 viewport 진입 시에만 파일 1회 디코드→4셀 크롭→objectURL, 언마운트 시 revoke.
 - **App.jsx**: tools id 11, MousePointerClick 아이콘, 라우팅 분기. **index.css**: `.ctrl-btn` 추가.
-- **검증**: `npm run build` 통과(1741 모듈), 신규 파일 lint clean. ⚠️ 폴더 선택→크롭 표시→export 인터랙션은 네이티브 다이얼로그 필요 → 브라우저 수동 테스트 필요(미완).
-- **다음 단계 아이디어**: export된 PNG/selection.json을 Higgsfield MCP 업스케일에 연결 (별도 작업).
+- **검증**: `npm run build` 통과(1741 모듈), 신규 파일 lint clean. ✅ 사용자 브라우저 검증 완료 — 2x2/1x4 분할 표시·선택·`Export (PNG+JSON)` ZIP 다운로드 정상.
+- **커밋/배포**: commit `7e90701` → origin/master 푸시 → Netlify 자동 배포.
+
+### ⏸ 보류: 업스케일링 단계 (HTML 셀렉터의 다음 파이프라인)
+- **목표**: 셀렉터가 뽑은 선택 PNG들(+ selection.json)을 업스케일러에 투입.
+- **보류 사유**: 사용자 **Higgsfield 이번 달 크레딧 소진** → 다음 주에 재시도 예정. 그때 **Higgsfield MCP 연결**해서 사용해볼 계획. 그전까지 이 기능 개발 보류.
+- **현황 메모(중요)**: 현재 MCP 레지스트리에 Higgsfield/Magnific 등 **업스케일러 MCP 없음**(검색 결과 0건). Replicate/fal.ai 류 connector도 없음. 다음 주에 Higgsfield MCP가 실제로 connectable인지 먼저 확인 필요.
+- **연결되면 결정할 것**:
+  1. 업스케일 위치 — 웹앱 내 버튼(API 직접 호출) vs MCP/외부 수동.
+  2. 웹앱 내 호출 시: API 키 클라이언트 노출 + CORS → **Netlify Function 프록시** 필요 가능성(이미 열린 문제로 등록됨).
+  3. 입력 = 셀렉터 export 결과(`images/*.png` + `selection.json`). selection.json의 `output_file` 경로/`cell_index`로 매핑.
+- 참고: 레퍼런스 워크플로우의 파일명에 `magnific`(AI 업스케일러)이 있었음 → 원본은 Magnific으로 업스케일했을 가능성.
 
 ### 2026-05-23 세션: 프롬프트 라이브러리 DB를 GitHub로 이전
 - **배경**: Supabase 무료 티어가 1주일 비활성 시 자동 일시정지 → 한 달쯤 지나면 DB 잠김
@@ -89,13 +101,14 @@
 - GitHub + Netlify 자동 배포 연결
 
 ## 🔜 다음 할 일
-1. **classic GitHub 토큰 폐기** (위 열린 문제 참고)
-2. 캐릭터 생성기 3가지 영상 스타일 테스트 (시네마틱/광고/애니메이션)
-3. AI 스토리보드 도구 개발 (App.jsx에 분기 미구현 — 카드만 존재)
-4. **OpenRouter API 키 회전** — 대시보드에서 새 키 발급 권장
+1. **(다음 주) HTML 셀렉터 → 업스케일링 연동** — Higgsfield 크레딧 충전 후 Higgsfield MCP 연결, 위 "⏸ 보류: 업스케일링 단계" 참고
+2. **classic GitHub 토큰 폐기** (위 열린 문제 참고)
+3. 캐릭터 생성기 3가지 영상 스타일 테스트 (시네마틱/광고/애니메이션)
+4. AI 스토리보드 도구 개발 (App.jsx에 분기 미구현 — 카드만 존재)
+5. **OpenRouter API 키 회전** — 대시보드에서 새 키 발급 권장
 
 ## 🔒 결정된 사항
-- 도구 목록: AI 스토리보드 / 이미지 그리드 분할기 / 이미지 스튜디오 / 비디오 레퍼런스 수집기 / 프롬프트 라이브러리 / 캐릭터 생성기 (6개)
+- 도구 목록: AI 스토리보드 / 이미지 그리드 분할기 / 이미지 스튜디오 / 비디오 레퍼런스 수집기 / 프롬프트 라이브러리 / 캐릭터 생성기 / HTML 셀렉터 (7개)
 - 배포: Netlify 자동 배포 (git push 시 반영)
 - 개발 서버 포트: 5173 고정
 - **프롬프트 라이브러리 저장소**: GitHub `GARAM4466/garam_tools_DB` (public) — `prompts.json` + `thumbnails/`
@@ -138,4 +151,4 @@
 - GitHub: https://github.com/GARAM4466/garam_tools
 
 ---
-_Last updated: 2026-05-23 (프롬프트 라이브러리 DB Supabase → GitHub 이전, Netlify 배포 반영)_
+_Last updated: 2026-05-23 (HTML 셀렉터 도구 추가·검증·푸시 완료, 업스케일링 단계 보류 — Higgsfield 크레딧 소진/다음 주 MCP 연결 예정. 다음 작업은 CLI에서 이어감)_
