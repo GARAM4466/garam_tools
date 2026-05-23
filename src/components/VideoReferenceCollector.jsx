@@ -1,10 +1,9 @@
-import { useState, useRef, useCallback } from 'react';
-import { ArrowLeft, Upload, Film, Loader2, Download, AlertCircle, Zap, Sliders } from 'lucide-react';
+import { useState, useRef, useCallback, useEffect } from 'react';
+import { ArrowLeft, Upload, Film, Loader2, Download, AlertCircle, Zap, Sliders, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import JSZip from 'jszip';
 
 const MAX_FILE_SIZE = 200 * 1024 * 1024; // 200MB
 const SAMPLE_INTERVAL = 1 / 15;          // 15fps 간격으로 샘플링
-const OUTPUT_WIDTH = 480;
 const DIFF_WIDTH = 80;   // diff 계산 전용 축소 해상도 (A: 36배 빠름)
 const DIFF_HEIGHT = 45;
 
@@ -32,6 +31,7 @@ const VideoReferenceCollector = ({ onBack }) => {
     const [progress, setProgress] = useState(0);
     const [frames, setFrames] = useState([]);
     const [isDraggingOver, setIsDraggingOver] = useState(false);
+    const [lightboxIndex, setLightboxIndex] = useState(null);
 
     const fileInputRef = useRef(null);
     const videoElRef = useRef(null);     // 추출 전용 hidden video
@@ -116,9 +116,9 @@ const VideoReferenceCollector = ({ onBack }) => {
             return;
         }
 
-        const aspectRatio = video.videoWidth > 0 ? video.videoHeight / video.videoWidth : 9 / 16;
-        const outputHeight = Math.round(OUTPUT_WIDTH * aspectRatio) || 270;
-        canvas.width = OUTPUT_WIDTH;
+        const outputWidth = video.videoWidth || 1920;
+        const outputHeight = video.videoHeight || 1080;
+        canvas.width = outputWidth;
         canvas.height = outputHeight;
         diffCanvas.width = DIFF_WIDTH;
         diffCanvas.height = DIFF_HEIGHT;
@@ -132,7 +132,7 @@ const VideoReferenceCollector = ({ onBack }) => {
         let cutCount = 0;
 
         const captureFrame = (t) => {
-            ctx.drawImage(video, 0, 0, OUTPUT_WIDTH, outputHeight);
+            ctx.drawImage(video, 0, 0, outputWidth, outputHeight);
             const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
             cutCount++;
             const fileName = `cut_${String(cutCount).padStart(3, '0')}_${t.toFixed(2)}s.jpg`;
@@ -229,10 +229,79 @@ const VideoReferenceCollector = ({ onBack }) => {
         document.body.removeChild(link);
     };
 
+    useEffect(() => {
+        if (lightboxIndex === null) return;
+        const handleKey = (e) => {
+            if (e.key === 'ArrowRight') setLightboxIndex(i => Math.min(i + 1, frames.length - 1));
+            else if (e.key === 'ArrowLeft') setLightboxIndex(i => Math.max(i - 1, 0));
+            else if (e.key === 'Escape') setLightboxIndex(null);
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [lightboxIndex, frames.length]);
+
     const isWorking = status === 'extracting';
 
     return (
         <div className="max-w-6xl mx-auto px-6 py-12 flex flex-col min-h-screen w-full font-sans">
+
+            {/* 라이트박스 모달 */}
+            {lightboxIndex !== null && frames[lightboxIndex] && (
+                <div
+                    className="fixed inset-0 z-50 bg-black/92 backdrop-blur-sm flex items-center justify-center"
+                    onClick={() => setLightboxIndex(null)}
+                >
+                    {/* 닫기 */}
+                    <button
+                        className="absolute top-5 right-5 text-white/50 hover:text-white transition-colors z-10"
+                        onClick={() => setLightboxIndex(null)}
+                    >
+                        <X className="w-7 h-7" />
+                    </button>
+
+                    {/* CUT 번호 */}
+                    <div className="absolute top-5 left-1/2 -translate-x-1/2 text-white/50 text-sm font-semibold tracking-widest">
+                        CUT #{lightboxIndex + 1} <span className="text-white/25">/ {frames.length}</span>
+                    </div>
+
+                    {/* 이전 버튼 */}
+                    {lightboxIndex > 0 && (
+                        <button
+                            className="absolute left-5 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-full p-2"
+                            onClick={(e) => { e.stopPropagation(); setLightboxIndex(i => i - 1); }}
+                        >
+                            <ChevronLeft className="w-8 h-8" />
+                        </button>
+                    )}
+
+                    {/* 다음 버튼 */}
+                    {lightboxIndex < frames.length - 1 && (
+                        <button
+                            className="absolute right-5 top-1/2 -translate-y-1/2 text-white/50 hover:text-white transition-colors bg-white/5 hover:bg-white/10 rounded-full p-2"
+                            onClick={(e) => { e.stopPropagation(); setLightboxIndex(i => i + 1); }}
+                        >
+                            <ChevronRight className="w-8 h-8" />
+                        </button>
+                    )}
+
+                    {/* 이미지 */}
+                    <img
+                        src={frames[lightboxIndex].dataUrl}
+                        alt={`Cut ${lightboxIndex + 1}`}
+                        className="max-w-[88vw] max-h-[82vh] object-contain rounded-xl shadow-2xl"
+                        onClick={(e) => e.stopPropagation()}
+                    />
+
+                    {/* 다운로드 버튼 */}
+                    <button
+                        className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 px-5 py-2.5 bg-brand text-black font-bold text-sm rounded-full hover:bg-[#00cc33] transition-colors shadow-lg"
+                        onClick={(e) => { e.stopPropagation(); downloadImage(frames[lightboxIndex]); }}
+                    >
+                        <Download className="w-4 h-4" /> 다운로드
+                    </button>
+                </div>
+            )}
+
             <video ref={videoElRef} className="hidden" muted playsInline crossOrigin="anonymous" />
             <canvas ref={canvasRef} className="hidden" />
             <canvas ref={diffCanvasRef} className="hidden" />
@@ -400,12 +469,12 @@ const VideoReferenceCollector = ({ onBack }) => {
 
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 auto-rows-max">
                         {frames.map((frame, i) => (
-                            <div key={frame.id} className="group bg-neutral-900 border border-neutral-800 hover:border-brand/40 transition-colors rounded-xl overflow-hidden shadow-lg fade-in-up">
+                            <div key={frame.id} onClick={() => setLightboxIndex(i)} className="group bg-neutral-900 border border-neutral-800 hover:border-brand/40 transition-colors rounded-xl overflow-hidden shadow-lg fade-in-up cursor-pointer">
                                 <div className="relative bg-black w-full aspect-video flex items-center justify-center overflow-hidden">
                                     <img src={frame.dataUrl} alt={`Cut ${i + 1}`} className="w-full h-full object-cover transform transition-transform duration-500 group-hover:scale-105" />
-                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+                                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3 backdrop-blur-[2px]">
                                         <button
-                                            onClick={() => downloadImage(frame)}
+                                            onClick={(e) => { e.stopPropagation(); downloadImage(frame); }}
                                             className="bg-brand text-black w-10 h-10 rounded-full flex items-center justify-center transform translate-y-2 group-hover:translate-y-0 transition-all hover:scale-110"
                                         >
                                             <Download className="w-5 h-5" />
