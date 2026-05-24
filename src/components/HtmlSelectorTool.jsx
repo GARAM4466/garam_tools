@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import JSZip from 'jszip';
-import { ArrowLeft, MousePointerClick, FolderOpen, Download, Trash2, CheckSquare, Save, Loader2 } from 'lucide-react';
+import { ArrowLeft, MousePointerClick, FolderOpen, Download, Trash2, CheckSquare, Save, Loader2, Shuffle, Maximize2 } from 'lucide-react';
 import {
   supportsFSAccess, saveHandle, loadHandle, verifyPermission, scanDirectory, filesToItems,
   getSubdirHandle, writeBlobToDirectory, writeJsonToDirectory,
@@ -15,10 +15,12 @@ const cellId = (groupId, idx) => `${groupId}#${idx}`;
 
 // One source file = one group; its grid cells = the selectable slices.
 // The file is decoded + cropped only when the row scrolls into view.
-function GroupRow({ group, rows, cols, cellCount, selectedSet, onToggle }) {
+// Memoized: re-renders only when its own selection mask or focus changes.
+const GroupRow = React.memo(function GroupRow({ group, rows, cols, cellCount, selStr, focusedIdx, focusedRef, onToggle }) {
   const ref = useRef(null);
   const [urls, setUrls] = useState(null);
   const [failed, setFailed] = useState(false);
+  const selSet = useMemo(() => new Set(selStr ? selStr.split(',') : []), [selStr]);
 
   useEffect(() => {
     const el = ref.current;
@@ -49,15 +51,17 @@ function GroupRow({ group, rows, cols, cellCount, selectedSet, onToggle }) {
         {Array.from({ length: cellCount }, (_, i) => {
           const idx = i + 1;
           const id = cellId(group.groupId, idx);
-          const selected = selectedSet.has(id);
+          const selected = selSet.has(String(idx));
+          const focused = focusedIdx === idx;
           return (
             <button
               key={id}
-              onClick={() => onToggle(id)}
+              ref={focused ? focusedRef : undefined}
+              onClick={(e) => { e.currentTarget.blur(); onToggle(id); }}
               title={`${group.name} · cell ${idx}`}
               className={`relative bg-black rounded-lg overflow-hidden border-4 transition-colors min-h-[80px] flex items-center justify-center ${
                 selected ? 'border-yellow-400' : 'border-transparent hover:border-neutral-600'
-              }`}
+              } ${focused ? 'outline outline-2 outline-offset-2 outline-brand' : ''}`}
             >
               {urls ? (
                 <img src={urls[i]} alt={`cell ${idx}`} className="w-full h-auto block" />
@@ -75,6 +79,38 @@ function GroupRow({ group, rows, cols, cellCount, selectedSet, onToggle }) {
       </div>
     </div>
   );
+});
+
+// Full-screen zoom preview of the currently focused cell. Re-crops as focus moves.
+function PreviewOverlay({ focused, rows, cols, onClose }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    let made = null;
+    (async () => {
+      try {
+        const file = await focused.group.getFile();
+        const blobs = await cropFileToCells(file, rows, cols, 'image/jpeg', 0.92);
+        if (cancelled) return;
+        made = URL.createObjectURL(blobs[focused.idx - 1]);
+        setUrl(made);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; if (made) URL.revokeObjectURL(made); };
+  }, [focused.group, focused.idx, rows, cols]);
+
+  return (
+    <div onClick={onClose} className="fixed inset-0 z-[60] bg-black/90 overflow-auto grid place-items-center p-4 cursor-zoom-out">
+      {url
+        ? <img src={url} alt="preview" className="block" style={{ maxWidth: '200vw', maxHeight: '200vh' }} />
+        : <Loader2 className="w-10 h-10 animate-spin text-white" />}
+      <div className="fixed bottom-6 left-0 right-0 text-center text-sm text-gray-300 pointer-events-none">
+        {focused.group.name} · cell {focused.idx}
+        <span className="mx-2 text-neutral-600">|</span>
+        <span className="text-gray-400">F / Esc 닫기 · ←→↑↓ 이동 · Space 선택</span>
+      </div>
+    </div>
+  );
 }
 
 const HtmlSelectorTool = ({ onBack }) => {
@@ -89,7 +125,11 @@ const HtmlSelectorTool = ({ onBack }) => {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [savedHandle, setSavedHandle] = useState(null);
+  const [focusedIndex, setFocusedIndex] = useState(0);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const fallbackInputRef = useRef(null);
+  const focusedRef = useRef(null);
+  const focusedIndexRef = useRef(0);
 
   const fsSupported = supportsFSAccess();
   const { rows, cols } = GRID_MODES[gridMode];
@@ -181,6 +221,90 @@ const HtmlSelectorTool = ({ onBack }) => {
   }, [visibleGroups, cellCount]);
 
   const clearAll = useCallback(() => setSelected(new Set()), []);
+
+  const invertVisible = useCallback(() => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const g of visibleGroups) for (let i = 1; i <= cellCount; i++) {
+        const id = cellId(g.groupId, i);
+        next.has(id) ? next.delete(id) : next.add(id);
+      }
+      return next;
+    });
+  }, [visibleGroups, cellCount]);
+
+  // Flat ordered list of every visible cell — the keyboard cursor moves over this.
+  const flatCells = useMemo(() => {
+    const arr = [];
+    for (const g of visibleGroups) for (let i = 1; i <= cellCount; i++) arr.push({ id: cellId(g.groupId, i), group: g, idx: i });
+    return arr;
+  }, [visibleGroups, cellCount]);
+
+  const idToFlat = useMemo(() => {
+    const m = new Map();
+    flatCells.forEach((c, i) => m.set(c.id, i));
+    return m;
+  }, [flatCells]);
+
+  // Per-group selection mask as a stable string so memoized rows only re-render when their own selection changes.
+  const groupSelStr = useMemo(() => {
+    const m = {};
+    for (const g of visibleGroups) {
+      const a = [];
+      for (let i = 1; i <= cellCount; i++) if (selected.has(cellId(g.groupId, i))) a.push(i);
+      m[g.groupId] = a.join(',');
+    }
+    return m;
+  }, [visibleGroups, selected, cellCount]);
+
+  const focusedCell = flatCells[focusedIndex] || null;
+  const focusedGroupId = focusedCell?.group.groupId;
+  const focusedIdxInGroup = focusedCell?.idx ?? 0;
+
+  // Mouse click also moves the keyboard cursor to that cell.
+  const onCellClick = useCallback((id) => {
+    toggle(id);
+    const fi = idToFlat.get(id);
+    if (fi != null) setFocusedIndex(fi);
+  }, [toggle, idToFlat]);
+
+  useEffect(() => { focusedIndexRef.current = focusedIndex; }, [focusedIndex]);
+
+  // Keep focus in range and scroll the focused cell into view.
+  useEffect(() => { setFocusedIndex((i) => Math.min(i, Math.max(0, flatCells.length - 1))); }, [flatCells.length]);
+  useEffect(() => { focusedRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [focusedIndex, previewOpen]);
+
+  // Keyboard shortcuts: arrows move, Space toggles, F preview, A/D/I select-all/clear/invert.
+  useEffect(() => {
+    if (!flatCells.length) return;
+    const onKey = (e) => {
+      const tag = e.target.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      const step = cellCount; // cells per visual row
+      const last = flatCells.length - 1;
+      switch (e.key) {
+        case 'ArrowRight': e.preventDefault(); setFocusedIndex((i) => Math.min(last, i + 1)); break;
+        case 'ArrowLeft':  e.preventDefault(); setFocusedIndex((i) => Math.max(0, i - 1)); break;
+        case 'ArrowDown':  e.preventDefault(); setFocusedIndex((i) => Math.min(last, i + step)); break;
+        case 'ArrowUp':    e.preventDefault(); setFocusedIndex((i) => Math.max(0, i - step)); break;
+        case ' ':
+        case 'Enter': {
+          e.preventDefault();
+          const c = flatCells[focusedIndexRef.current];
+          if (c) toggle(c.id);
+          break;
+        }
+        case 'f': case 'F': e.preventDefault(); setPreviewOpen((o) => !o); break;
+        case 'Escape': setPreviewOpen(false); break;
+        case 'a': case 'A': case 'ㅁ': e.preventDefault(); selectAllVisible(); break;
+        case 'd': case 'D': case 'ㅇ': e.preventDefault(); clearAll(); break;
+        case 'i': case 'I': case 'ㅑ': e.preventDefault(); invertVisible(); break;
+        default: break;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [flatCells, cellCount, toggle, selectAllVisible, clearAll, invertVisible]);
 
   // Collect selected cells grouped by source file so each file is cropped once at full res.
   const collectSelected = useCallback(() => {
@@ -340,12 +464,20 @@ const HtmlSelectorTool = ({ onBack }) => {
             ))}
           </div>
 
-          <button onClick={selectAllVisible} disabled={busy} className="ctrl-btn">
-            <CheckSquare className="w-4 h-4 text-brand" /> 보이는 컷 전체 선택
+          <button onClick={selectAllVisible} disabled={busy} className="ctrl-btn" title="단축키 A">
+            <CheckSquare className="w-4 h-4 text-brand" /> 전체 선택
           </button>
-          <button onClick={clearAll} disabled={busy} className="ctrl-btn">
+          <button onClick={clearAll} disabled={busy} className="ctrl-btn" title="단축키 D">
             <Trash2 className="w-4 h-4 text-red-400" /> 전체 해제
           </button>
+          <button onClick={invertVisible} disabled={busy} className="ctrl-btn" title="단축키 I">
+            <Shuffle className="w-4 h-4 text-brand" /> 선택 반전
+          </button>
+          {focusedCell && (
+            <button onClick={() => setPreviewOpen(true)} disabled={busy} className="ctrl-btn" title="단축키 F">
+              <Maximize2 className="w-4 h-4 text-brand" /> 확대
+            </button>
+          )}
           {dirHandle && (
             <button onClick={exportToFolder} disabled={busy} className="ctrl-btn">
               {exporting === 'folder' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4 text-brand" />} 폴더에 저장
@@ -357,10 +489,13 @@ const HtmlSelectorTool = ({ onBack }) => {
           </button>
         </div>
 
-        <div className="max-w-7xl mx-auto px-6 pb-3 flex flex-wrap gap-2">
+        <div className="max-w-7xl mx-auto px-6 pb-3 flex flex-wrap items-center gap-2">
           {tabs.map((tab) => (
             <TabBtn key={tab} active={activeTab === tab} onClick={() => setActiveTab(tab)}>{tab}</TabBtn>
           ))}
+          <span className="ml-auto text-[11px] text-neutral-500">
+            ←→↑↓ 이동 · Space 선택 · F 확대 · A 전체 · D 해제 · I 반전
+          </span>
         </div>
       </div>
 
@@ -378,11 +513,17 @@ const HtmlSelectorTool = ({ onBack }) => {
             rows={rows}
             cols={cols}
             cellCount={cellCount}
-            selectedSet={selected}
-            onToggle={toggle}
+            selStr={groupSelStr[g.groupId] || ''}
+            focusedIdx={g.groupId === focusedGroupId ? focusedIdxInGroup : 0}
+            focusedRef={focusedRef}
+            onToggle={onCellClick}
           />
         ))}
       </div>
+
+      {previewOpen && focusedCell && (
+        <PreviewOverlay key={focusedCell.id} focused={focusedCell} rows={rows} cols={cols} onClose={() => setPreviewOpen(false)} />
+      )}
     </div>
   );
 };

@@ -23,7 +23,9 @@
   - `src/components/HtmlSelectorTool.jsx` — 메인 UI
 - **그리드 분할**: 토글 2모드 — **2x2(4분할)** / **1x4(세로 4칸)**. 한 파일 = 한 그룹 행, 셀 4개에 1~4 번호 badge.
 - **선택**: cell id = `relativePath#idx`. `selected` Set, 클릭 토글, 노란 테두리. localStorage 자동 저장 키 = `html-selector:selection:{folder}:{gridMode}` (모드별 분리). 새로고침 유지.
-- **컨트롤바**(sticky top-16): 카운터(cells/files/selected) / 그리드 모드 토글 / 보이는 컷 전체 선택 / 전체 해제 / 폴더에 저장(FS 시) / Export(PNG+JSON).
+- **편의 기능(2026-05-24 추가)**: 키보드 커서(brand outline) 네비게이션 — `←→↑↓` 이동(↑↓는 그룹 간 같은 열, 자동 scrollIntoView), `Space`/`Enter` 선택 토글, `F` 확대 미리보기(`PreviewOverlay`, overflow-auto grid 중앙정렬 + 최대 200vw/200vh로 화면보다 크게, 미리보기 중 방향키로 이동하면 `key={focusedCell.id}`로 remount되며 따라감, Esc/F/클릭 닫기), `A` 전체선택/`D` 해제/`I` 반전(보이는 탭 기준, 한글자판 ㅁ/ㅇ/ㅑ도 매핑). 마우스 클릭 시 커서도 그 셀로 이동 + `e.currentTarget.blur()`로 네이티브 포커스 링 잔상 제거.
+- **성능**: `GroupRow`는 `React.memo`. 그룹별 선택 마스크(`groupSelStr`, 콤마 문자열) + `focusedIdx` props로 전달 → 키 입력/토글 시 해당 행만 리렌더(680그룹 OK). 포커스 이동은 `focusedIndexRef`로 stale 회피, `flatCells`(보이는 전체 셀 평면 배열) 커서 인덱싱.
+- **컨트롤바**(sticky top-16): 카운터(cells/files/selected) / 그리드 모드 토글 / 전체 선택 / 전체 해제 / 선택 반전 / 확대 / 폴더에 저장(FS 시) / Export(PNG+JSON). 하단에 단축키 안내 줄.
 - **Export 2종**:
   - `Export (PNG + JSON)`: ZIP 다운로드. `images/*.png`(풀해상도 크롭) + `selection.json`. 어디서나 동작.
   - `폴더에 저장`(FS 지원 시): 원본 폴더 안 `_selected_<timestamp>/` 하위에 `images/` PNG + selection.json 직접 기록.
@@ -151,4 +153,4 @@
 - GitHub: https://github.com/GARAM4466/garam_tools
 
 ---
-_Last updated: 2026-05-23 (HTML 셀렉터 도구 추가·검증·푸시 완료, 업스케일링 단계 보류 — Higgsfield 크레딧 소진/다음 주 MCP 연결 예정. 다음 작업은 CLI에서 이어감)_
+_Last updated: 2026-05-24 (HTML 셀렉터 편의 기능 추가 — 키보드 네비/Space 선택/F 확대/A·D·I + 클릭 포커스 잔상 수정·확대 2배. 업스케일링 단계 여전히 보류, 다음 주 Higgsfield MCP 연결 예정)_
