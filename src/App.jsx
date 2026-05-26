@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Layout, Grid, Clapperboard, Film, BookMarked, User, ArrowRight, Sparkles, MousePointerClick } from 'lucide-react';
+import { Layout, Grid, Clapperboard, Film, BookMarked, User, ArrowRight, Sparkles, MousePointerClick, LibraryBig } from 'lucide-react';
 import ImageSplitterTool from './components/ImageSplitterTool';
 import VideoReferenceCollector from './components/VideoReferenceCollector';
 import PromptVault from './components/PromptVault';
 import PromptBuilderTool from './components/PromptBuilderTool';
 import CharacterGeneratorTool from './components/CharacterGeneratorTool';
 import HtmlSelectorTool from './components/HtmlSelectorTool';
+import ReferenceLibraryTool from './components/ReferenceLibraryTool';
 
 // --- Data ---
 const tools = [
@@ -16,6 +17,7 @@ const tools = [
   { id: 10, title: '프롬프트 라이브러리',  description: '인터넷, 강의, 커뮤니티에서 얻은 유용한 AI 프롬프트를 한 곳에 모아 빠르게 찾고 복사해서 사용하세요.' },
   { id: 9,  title: '캐릭터 생성기',       description: '성별, 나이대, 헤어, 의상 등 외형 옵션을 선택하면 AI 이미지 생성에 최적화된 캐릭터 레퍼런스 시트 프롬프트를 자동으로 구성합니다.' },
   { id: 11, title: 'HTML 셀렉터',        description: '4분할 그리드 이미지 폴더를 열면 각 컷을 분리해 보여줍니다. 좋은 컷만 클릭해 고르고, 잘린 PNG와 selection.json으로 내보내 업스케일링 파이프라인에 넘깁니다.' },
+  { id: 12, title: '레퍼런스 라이브러리',  description: '재사용할 인물·공간·소품·스타일 정본을 이미지와 프롬프트로 모아둡니다. 종류·태그로 검색하고, 영상 생성 단계에 바로 끌어다 쓰세요.' },
 ];
 
 // --- Components ---
@@ -58,6 +60,7 @@ const ToolCard = ({ tool, onClick }) => {
       case 10: return <BookMarked className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
       case 9:  return <User       className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
       case 11: return <MousePointerClick className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
+      case 12: return <LibraryBig className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
       default: return <Layout     className="w-6 h-6 text-gray-300 group-hover:text-brand transition-colors" />;
     }
   };
@@ -144,6 +147,8 @@ const App = () => {
           <CharacterGeneratorTool onBack={navigateHome} />
         ) : currentTool === 11 ? (
           <HtmlSelectorTool onBack={navigateHome} />
+        ) : currentTool === 12 ? (
+          <ReferenceLibraryTool onBack={navigateHome} />
         ) : (
           <>
             <Hero />

@@ -6,13 +6,30 @@
 
 ## 📍 현재 상태
 - 로컬 개발 — `npm run dev` → http://localhost:5173 (PM2로 항상 켜두기 가능)
-- **전체 도구 1차 완성 상태** — 쓰면서 디벨로업 방식으로 전환. 도구 7개 (HTML 셀렉터 추가됨, id 11)
+- **전체 도구 1차 완성 상태** — 쓰면서 디벨로업 방식으로 전환. 도구 8개 (레퍼런스 라이브러리 추가됨, id 12)
 - **HTML 셀렉터 완성 + 푸시·배포 완료** (commit `7e90701`). 사용자 검증: 2x2/1x4 분할·선택·ZIP 다운로드 정상 작동 확인.
 - **⏸ 다음 작업은 사용자가 CLI(Claude Code)로 이어서 진행 예정** — 세션 시작 시 이 파일부터 읽을 것. git 푸시 완료라 상태 동기화 OK, `npm run dev`만 실행하면 됨.
 - 캐릭터 생성기 프롬프트 엔진 고도화 완료 — 실사 기준 테스트 통과
 - **프롬프트 라이브러리 DB를 Supabase → GitHub로 이전 완료** (Supabase 무료 티어 1주 비활성 시 자동 일시정지 문제 해결)
 
 ## ✅ 완료된 작업
+
+### 2026-05-26 세션: 레퍼런스 라이브러리 도구 추가 (id 12)
+- **배경(워크플로우 설계 토론)**: 광고용 AI 스틸/영상 제작 워크플로우를 길게 논의한 결과 도달한 결론.
+  - 이미지 모델은 nano banana 2 / gpt-image 등으로 **웹페이지에서 수동 생성**(API 미사용). 영상은 Seedance 2.0 / Kling 3.0 Omni.
+  - 2026 최신 동향: **멀티모델이 기본**(스틸·영상 모델 분리), 일관성은 긴 프롬프트가 아니라 **레퍼런스 이미지 입력 + 공통 스타일 블록**으로 잡음. 프롬프트 스위트스팟 = 30~100단어(너무 길면 요소 누락). 영상은 **타임라인(샷별 비트) 프롬프팅**이 정석.
+  - "9컷 한 장(격자)을 통째로 영상화"는 X. 대신 **개별 정본 이미지 묶음(최대 9장)을 Seedance 2.0에 투입 → 일관 멀티샷**, 또는 Kling 3.0 Omni 멀티샷 스토리보드(최대 6컷).
+  - **핵심 결론**: 에셋(인물·공간)은 프로젝트보다 오래 재사용됨 → **"레퍼런스 라이브러리"를 본체**로, 타임라인 프롬프트 빌더는 그 위에 얹는 v2 기능으로.
+- **이번 작업 = 라이브러리 본체 1차 구현.** (타임라인 프롬프트 빌더는 v2 보류)
+- **저장**: 전부 로컬 **IndexedDB**(DB `ref-library`, store `assets`). 서버·API 없음. 이미지 = Blob 원본 + 다운스케일 JPEG 썸네일(longest≤480, q0.82). ⚠️ 이 브라우저/PC 로컬 한정(기기 간 동기화 안 됨) — PromptVault처럼 GitHub로 옮기는 건 이미지 용량 때문에 보류.
+- **신규 파일**:
+  - `src/lib/refLibrary.js` — IndexedDB CRUD(`getAllAssets/putAsset/deleteAsset`), `ASSET_TYPES`(인물/공간/소품/스타일), `makeThumbnail`, `fileToImageRecord`(원본 blob+썸네일+원본 w/h), `newId`(crypto.randomUUID)
+  - `src/components/ReferenceLibraryTool.jsx` — 메인 UI
+- **에셋 데이터**: `{ id, name, type, tags[], prompt, memo, images[{id,name,mime,blob,thumb,w,h}], createdAt, updatedAt }`
+- **UI**: 카드 그리드(2/3/4열, 정사각 커버 썸네일, 다중 이미지 N장 배지) / 종류 탭 필터(전체+4종, 카운트) / 이름·프롬프트·태그 검색 / 태그 필터 / 추가·수정 모달(다중 이미지 드래그&드롭+파일선택, 종류 pill, 프롬프트/태그/메모) / 카드에서 **프롬프트 복사**·수정·삭제(확인) / 커버 클릭 시 **라이트박스**(풀해상도) / 수정 모달에서 **이미지 다운로드**.
+- **objectURL 관리**: `urls` ref Map(`imageId|thumb`/`|full`)로 캐시, 언마운트 시 전체 revoke, 에셋 삭제 시 해당 이미지 revoke.
+- **App.jsx**: tools id 12, `LibraryBig` 아이콘, 라우팅 분기 추가.
+- **검증**: `npm run build` 통과(1743 모듈, 423.61 kB JS), 신규 파일 lint clean. (사용자 브라우저 검증 대기)
 
 ### 2026-05-23 세션 2차: HTML 셀렉터 도구 추가 (id 11)
 - **워크플로우**: 폴더 안의 각 파일 = 4분할 그리드 이미지 1장. 셀렉터가 **캔버스로 그 파일을 셀별로 잘라** 보여줌 → 좋은 컷 클릭 선택 → 잘린 PNG + selection.json export → 업스케일링(Higgsfield MCP 등)에 투입.
@@ -103,14 +120,16 @@
 - GitHub + Netlify 자동 배포 연결
 
 ## 🔜 다음 할 일
-1. **(다음 주) HTML 셀렉터 → 업스케일링 연동** — Higgsfield 크레딧 충전 후 Higgsfield MCP 연결, 위 "⏸ 보류: 업스케일링 단계" 참고
-2. **classic GitHub 토큰 폐기** (위 열린 문제 참고)
-3. 캐릭터 생성기 3가지 영상 스타일 테스트 (시네마틱/광고/애니메이션)
-4. AI 스토리보드 도구 개발 (App.jsx에 분기 미구현 — 카드만 존재)
-5. **OpenRouter API 키 회전** — 대시보드에서 새 키 발급 권장
+1. **레퍼런스 라이브러리 사용자 검증** — 에셋 추가(이미지 드래그)·검색·프롬프트 복사·라이트박스·수정/삭제 동작 확인. 피드백 반영.
+2. **(v2) 타임라인 프롬프트 빌더** — 라이브러리에서 인물·공간 카드를 끌어다 넣고, 샷별 비트(컷/조명/대사/동작/전환)를 추가하면 구조화된 멀티샷 프롬프트로 조립+복사. 공통 스타일 블록 자동 삽입(깜빡임 방지). Seedance 2.0/Kling 3.0 투입용.
+3. **(다음 주) HTML 셀렉터 → 업스케일링 연동** — Higgsfield 크레딧 충전 후 Higgsfield MCP 연결, 위 "⏸ 보류: 업스케일링 단계" 참고
+4. **classic GitHub 토큰 폐기** (위 열린 문제 참고)
+5. 캐릭터 생성기 3가지 영상 스타일 테스트 (시네마틱/광고/애니메이션)
+6. AI 스토리보드 도구 개발 (App.jsx에 분기 미구현 — 카드만 존재)
+7. **OpenRouter API 키 회전** — 대시보드에서 새 키 발급 권장
 
 ## 🔒 결정된 사항
-- 도구 목록: AI 스토리보드 / 이미지 그리드 분할기 / 이미지 스튜디오 / 비디오 레퍼런스 수집기 / 프롬프트 라이브러리 / 캐릭터 생성기 / HTML 셀렉터 (7개)
+- 도구 목록: AI 스토리보드 / 이미지 그리드 분할기 / 이미지 스튜디오 / 비디오 레퍼런스 수집기 / 프롬프트 라이브러리 / 캐릭터 생성기 / HTML 셀렉터 / 레퍼런스 라이브러리 (8개)
 - 배포: Netlify 자동 배포 (git push 시 반영)
 - 개발 서버 포트: 5173 고정
 - **프롬프트 라이브러리 저장소**: GitHub `GARAM4466/garam_tools_DB` (public) — `prompts.json` + `thumbnails/`
@@ -143,6 +162,8 @@
 - 프롬프트 라이브러리: src/components/PromptVault.jsx (GitHub API 연동)
 - 이미지 스튜디오: src/components/PromptBuilderTool.jsx
 - **캐릭터 생성기**: src/components/CharacterGeneratorTool.jsx
+- **HTML 셀렉터**: src/components/HtmlSelectorTool.jsx (+ src/lib/fileSystem.js, src/lib/imageGrid.js)
+- **레퍼런스 라이브러리**: src/components/ReferenceLibraryTool.jsx (+ src/lib/refLibrary.js, IndexedDB `ref-library`)
 - **GitHub 클라이언트**: src/lib/github.js (프롬프트 라이브러리 DB+스토리지)
 - Supabase 클라이언트: src/lib/supabase.js (현재 미사용)
 - **OpenRouter 클라이언트**: src/lib/openrouter.js (캐릭터 생성기 + 이미지 스튜디오 공용)
@@ -153,4 +174,4 @@
 - GitHub: https://github.com/GARAM4466/garam_tools
 
 ---
-_Last updated: 2026-05-24 (HTML 셀렉터 편의 기능 추가 — 키보드 네비/Space 선택/F 확대/A·D·I + 클릭 포커스 잔상 수정·확대 2배. 업스케일링 단계 여전히 보류, 다음 주 Higgsfield MCP 연결 예정)_
+_Last updated: 2026-05-26 (레퍼런스 라이브러리 도구 추가 id 12 — IndexedDB 로컬 저장, 인물/공간/소품/스타일 에셋 카드, 다중 이미지·태그·프롬프트·검색·라이트박스. 워크플로우 토론 끝에 "라이브러리 본체 + 타임라인 프롬프트 빌더(v2)"로 방향 확정. 빌드/린트 통과, 사용자 검증 대기)_
